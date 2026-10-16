@@ -1,0 +1,1576 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { getCard, hasCard, HEROES } from '../../cards/registry';
+import { AiBrain, aiMulligan, chooseAction, EMOTE_NAMES, EMOTE_TEXT, type Emote } from '../../engine/ai';
+import { Game, isHero } from '../../engine/game';
+import { CLASS_NAMES } from '../../engine/heroes';
+import type { Action, Hero, Location, Minion, PlayerId, PlayerState } from '../../engine/state';
+import type { CardDef } from '../../engine/types';
+import { DIFFICULTY_NAMES } from '../../game/economy';
+import { DECK_KIND_NAMES, recordLadderMatch, type LadderChange } from '../../game/ladder';
+import { makeAiDeck } from '../../game/opponents';
+import { recordMatch } from '../../game/profile';
+import { finishFight, gameOptions, newDungeonState } from '../../game/dungeon';
+import type { BattleConfig } from '../App';
+import { CLASS_COLORS, formatCardText } from '../cardText';
+import { GlossaryBrowser } from '../components/GlossaryBrowser';
+import { glossaryFor, playHint } from '../glossary';
+import { Art, CardBack, CardView } from '../components/Card';
+import { RankBadge, RankPips } from '../components/Rank';
+import { direct, type Snap } from '../fx';
+import { clamp, useViewport } from '../hooks';
+import { getProfile, setProfile, useProfile } from '../store';
+
+type Mode =
+  | { k: 'idle' }
+  | { k: 'card'; handUid: number; stage: 'select' | 'choose' | 'place' | 'target'; option?: number; position?: number; side?: 'enemy' }
+  | { k: 'attack'; attacker: number }
+  | { k: 'heroPower'; option?: number }
+  | { k: 'heroPower2' }
+  | { k: 'location'; uid: number }
+  | { k: 'powerChoose' };
+
+const AI_DELAY = { slow: 1300, normal: 800, fast: 350 };
+
+const ME: PlayerId = 0;
+const AI: PlayerId = 1;
+
+const SPEED_FACTOR = { slow: 1.35, normal: 1, fast: 0.55 };
+/** 兩次表情之間至少間隔（毫秒） */
+const EMOTE_GAP = 6000;
+const MAX_AI_EMOTES = 6;
+
+export function Battle({ config, onExit, onRematch }: { config: BattleConfig; onExit: () => void; onRematch: () => void }) {
+  const profile = useProfile();
+  const gameRef = useRef<Game | null>(null);
+  const ladder = config.ladder;
+  // 天梯對手的大腦（每場一個）
+  const brain = useMemo(() => (ladder ? new AiBrain(ladder.persona) : null), [ladder]);
+  const [error] = useState(() => {
+    const deck = getProfile().decks.find((d) => d.id === config.deckId);
+    if (!deck && !config.dungeon) return '找不到套牌';
+    const aiDeck = ladder ? ladder.deck : makeAiDeck(config.oppClass, config.difficulty, Math.floor(Math.random() * 1e9));
+    const g = config.dungeon
+      ? Game.create(gameOptions(config.dungeon))
+      : Game.create({
+          decks: [deck!.cards, aiDeck],
+          classes: [deck!.heroClass, config.oppClass],
+          names: ['你', ladder ? ladder.name : HEROES[config.oppClass].name],
+          ai: [false, true],
+        });
+    g.apply({ type: 'mulligan', player: AI, replace: brain ? brain.mulligan(g, AI) : aiMulligan(g, AI, config.difficulty) });
+    gameRef.current = g;
+    return '';
+  });
+  const [version, setVersion] = useState(0);
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const [mode, setMode] = useState<Mode>({ k: 'idle' });
+  /** 選中了一張有預備的卡（即使現在打不出，也可以預備） */
+  const [prepPick, setPrepPick] = useState<number | null>(null);
+  /** 拖曳出牌：卡牌變半透明，跟著滑鼠 / 手指移動 */
+  const [drag, setDrag] = useState<{ handUid: number; x: number; y: number } | null>(null);
+  const [aim, setAim] = useState<{ fx: number; fy: number; x: number; y: number; hit: number | null; set: Set<number> } | null>(null);
+  const press = useRef<{ uid: number; sx: number; sy: number; dragging: boolean; long: boolean; timer: number } | null>(null);
+  const suppressClick = useRef(false);
+  const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId; second?: boolean } | null>(null);
+  const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
+  const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
+  const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw'; change?: LadderChange } | null>(null);
+  const [emotes, setEmotes] = useState<{ id: number; player: PlayerId; emote: Emote }[]>([]);
+  const [emoteMenu, setEmoteMenu] = useState(false);
+  const lastEmote = useRef<Record<PlayerId, number>>({ 0: -Infinity, 1: -Infinity });
+  const aiEmotes = useRef(0);
+  const [showLog, setShowLog] = useState(false);
+  const [turnBanner, setTurnBanner] = useState(0);
+  const lastTurn = useRef(0);
+  const [menu, setMenu] = useState(false);
+  const [toast, setToast] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const lastFx = useRef(0);
+  const vp = useViewport();
+  const cw = Math.round(vp.w < 600 ? clamp(Math.min(vp.w * 0.22, vp.h * 0.13), 64, 104) : clamp(Math.min(vp.w * 0.12, vp.h * 0.15), 64, 128));
+  const mw = Math.round(clamp(Math.min(vp.w * 0.115, vp.h * 0.105), 46, 96));
+  const hw = Math.round(clamp(Math.min(vp.h * 0.12, vp.w * 0.2), 58, 110));
+
+  const g = gameRef.current!;
+  const s = g?.s;
+  // 開發模式：讓自動化測試可以直接擺好盤面（正式版不會包含）
+  if (import.meta.env.DEV) (window as unknown as { __battle?: unknown }).__battle = { g, refresh, brain };
+
+  // ------------------------------------------------------------ 動作
+  const act = useCallback(
+    (a: Action) => {
+      const ok = g.apply(a);
+      setMode({ k: 'idle' });
+      setPrepPick(null);
+      if (!ok) {
+        const r = g.check(a);
+        if (r.reason) flash(r.reason);
+      }
+      refresh();
+      return ok;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [g],
+  );
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast((t) => (t === msg ? '' : t)), 1600);
+  };
+
+  // ------------------------------------------------------------ 電腦回合
+  // 只在遊戲狀態改變（version）時排程，滑鼠移動等重繪不會打斷電腦
+  useEffect(() => {
+    if (!s || s.phase !== 'play' || s.current !== AI || s.pendingChoice) return;
+    const wait = brain ? brain.thinkTime(g) * SPEED_FACTOR[profile.settings.aiSpeed] : AI_DELAY[profile.settings.aiSpeed];
+    const t = window.setTimeout(() => {
+      if (brain) {
+        // 真人會在沒救的時候投降
+        if (brain.shouldConcede(g)) {
+          const e = brain.react('concede');
+          if (e) say(AI, e, true);
+          window.setTimeout(() => {
+            g.apply({ type: 'concede', player: AI });
+            refresh();
+          }, e ? 1400 : 300);
+          return;
+        }
+        const a = brain.choose(g);
+        if (!g.apply(a)) g.apply({ type: 'endTurn' });
+        if (brain.blundered) aiSay(brain.react('blunder'), 900);
+        else if (brain.swing(g, AI) > 14) aiSay(brain.react('swingFor'), 700);
+      } else {
+        const a = chooseAction(g, config.difficulty);
+        if (!g.apply(a)) g.apply({ type: 'endTurn' });
+      }
+      refresh();
+    }, Math.max(wait, busyUntil.current - performance.now() + 150));
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, profile.settings.aiSpeed]);
+
+  // ------------------------------------------------------------ 表情
+  const say = (player: PlayerId, emote: Emote, force = false, gap = player === AI ? EMOTE_GAP : 1500) => {
+    const now = performance.now();
+    if (!force && now - lastEmote.current[player] < gap) return false;
+    if (player === AI && !force && aiEmotes.current >= MAX_AI_EMOTES) return false;
+    lastEmote.current[player] = now;
+    if (player === AI) aiEmotes.current++;
+    const id = now + Math.random();
+    setEmotes((list) => [...list.filter((x) => x.player !== player), { id, player, emote }]);
+    window.setTimeout(() => setEmotes((list) => list.filter((x) => x.id !== id)), 2600);
+    return true;
+  };
+  const aiSay = (e: Emote | null, delay: number, gap = EMOTE_GAP) => {
+    if (!e) return;
+    window.setTimeout(() => say(AI, e, false, gap), delay * (0.7 + Math.random() * 0.8));
+  };
+  const playerEmote = (e: Emote) => {
+    setEmoteMenu(false);
+    if (!say(ME, e)) return;
+    // 回應玩家的表情不用等太久
+    if (brain) aiSay(brain.react('playerEmote', e), 1500, 2000);
+  };
+  // 開場打招呼
+  const greeted = useRef(false);
+  useEffect(() => {
+    if (!brain || greeted.current || !s || s.phase !== 'play') return;
+    greeted.current = true;
+    aiSay(brain.react('start'), 1800);
+  });
+  // 玩家打出漂亮的一手時，對手可能會說「哇！」或「打得好」
+  useEffect(() => {
+    if (!brain || !s || s.phase !== 'play' || s.current !== ME) return;
+    if (brain.swing(g, AI) < -14) aiSay(brain.react('swingAgainst'), 1200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+
+  // ------------------------------------------------------------ 特效
+  useEffect(() => {
+    if (!s) return;
+    const fresh = s.fx.filter((f) => f.id > lastFx.current);
+    if (!fresh.length) return;
+    lastFx.current = fresh[fresh.length - 1].id;
+    for (const f of fresh) {
+      if (f.kind === 'play' && f.player === AI) {
+        const def = f.cardId && hasCard(f.cardId) ? getCard(f.cardId) : null;
+        // 法術由施放動畫顯示；對手的奧秘不能讓玩家看到是哪一張
+        if (def?.secret) setBanner({ id: f.id, text: `${s.players[AI].name}打出了一張奧秘` });
+        else if (def?.type === 'SPELL') continue;
+        else if (def) setBanner({ id: f.id, cardId: def.id, text: `${s.players[AI].name}打出了` });
+        else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${g.powerInfo(s.players[AI]).name}` });
+      }
+      if (f.kind === 'secret' && f.cardId) setBanner({ id: f.id, cardId: f.cardId, text: '奧秘揭露！' });
+      // 手牌已滿：超抽的牌被燒掉（高佛雷則是暫時收起來），讓玩家看到是哪一張
+      if (f.kind === 'burn' && f.cardId && hasCard(f.cardId) && f.player !== undefined) {
+        const who = f.player === ME ? '你' : s.players[f.player].name;
+        setBanner({ id: f.id, cardId: f.cardId, text: f.amount === 1 ? `${who}的手牌已滿，這張牌被暫時收起來了` : `${who}的手牌已滿，這張牌被燒掉了` });
+      }
+    }
+  });
+
+  // 輪到玩家時顯示「你的回合」
+  useEffect(() => {
+    if (!s || s.phase !== 'play' || s.current !== ME || s.turn === lastTurn.current) return;
+    lastTurn.current = s.turn;
+    setTurnBanner(s.turn);
+  });
+  useEffect(() => {
+    if (!turnBanner) return;
+    const t = window.setTimeout(() => setTurnBanner(0), 1300);
+    return () => window.clearTimeout(t);
+  }, [turnBanner]);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = window.setTimeout(() => setBanner(null), 1500);
+    return () => window.clearTimeout(t);
+  }, [banner]);
+
+  // 對戰動畫：每次狀態更新後，依照新的特效事件排出時間軸播放（見 ../fx.ts）。
+  // 已經從畫面消失的角色，用上一次畫面的快照來播放。
+  const battleRef = useRef<HTMLDivElement>(null);
+  const snapshot = useRef(new Map<number, Snap>());
+  const lastAnimFx = useRef<number | null>(null);
+  /** 動畫播完的時間（電腦會等動畫播完才行動） */
+  const busyUntil = useRef(0);
+  const [cast, setCast] = useState<{ id: number; cardId: string; player: PlayerId } | null>(null);
+  useLayoutEffect(() => {
+    const root = battleRef.current;
+    if (!root || !s) return;
+    const fresh = s.fx.filter((f) => f.id > (lastAnimFx.current ?? Infinity));
+    const newest = s.fx.length ? s.fx[s.fx.length - 1].id : 0;
+    lastAnimFx.current = Math.max(lastAnimFx.current ?? newest, newest);
+    if (fresh.length) {
+      const duration = direct(root, fresh, snapshot.current, {
+        cast: (cardId, player, at) => {
+          const id = Date.now() + Math.random();
+          window.setTimeout(() => setCast({ id, cardId, player }), at);
+          window.setTimeout(() => setCast((c) => (c?.id === id ? null : c)), at + 720);
+        },
+      });
+      busyUntil.current = Math.max(busyUntil.current, performance.now() + duration);
+    }
+    const next = new Map<number, Snap>();
+    root.querySelectorAll<HTMLElement>('[data-uid]').forEach((el) => next.set(Number(el.dataset.uid), { rect: el.getBoundingClientRect(), html: el.outerHTML }));
+    snapshot.current = next;
+  });
+
+  // ------------------------------------------------------------ 對戰結束 → 發放獎勵
+  useEffect(() => {
+    if (!s || s.phase !== 'over' || reward) return;
+    const result = s.winner === ME ? 'win' : s.winner === 'draw' ? 'draw' : 'loss';
+    if (ladder) {
+      const r = recordLadderMatch(getProfile(), result, s.players[ME].heroClass, ladder);
+      setProfile(r.profile);
+      setReward({ gold: r.gold, daily: r.dailyBonus, result, change: r.change });
+      const conceded = s.log.some((l) => l.player === AI && l.text.endsWith('投降了'));
+      if (brain && !conceded) aiSay(brain.react(result === 'win' ? 'lose' : 'win'), 600);
+      return;
+    }
+    if (config.dungeon) {
+      // 地城探險：更新這一輪（獎勵在地城畫面領取）
+      setProfile((pr) => ({ ...pr, dungeon: { ...(pr.dungeon ?? newDungeonState()), run: finishFight(config.dungeon!, result === 'win') } }));
+      setReward({ gold: 0, daily: 0, result });
+      return;
+    }
+    const r = recordMatch(getProfile(), result, config.difficulty, s.players[ME].heroClass, config.oppClass);
+    setProfile(r.profile);
+    setReward({ gold: r.gold, daily: r.dailyBonus, result });
+  });
+
+  // ------------------------------------------------------------ Esc 取消
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMode({ k: 'idle' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const myTurn = !!s && s.phase === 'play' && s.current === ME && !s.pendingChoice;
+
+  const validTargets = useMemo(() => {
+    if (!s || !myTurn) return new Set<number>();
+    if (mode.k === 'attack') return new Set(g.attackTargets(mode.attacker));
+    if (mode.k === 'heroPower') return new Set(g.heroPowerTargets(mode.option));
+    if (mode.k === 'heroPower2') return new Set(g.secondPowerTargets());
+    if (mode.k === 'location') {
+      const req = g.locationTargetReq(mode.uid);
+      return req ? new Set(g.validTargets(req, ME, true)) : new Set<number>();
+    }
+    if (mode.k === 'card' && mode.stage === 'target') {
+      const req = g.playTargetReq(mode.handUid, mode.option);
+      if (req) return new Set(g.validTargets(req, ME, g.cardIsSpell(mode.handUid)));
+    }
+    return new Set<number>();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, s?.fxSeq, s?.turn, myTurn]);
+
+  if (error || !g || !s) {
+    return (
+      <div className="battle-error">
+        <p>{error || '無法開始對戰'}</p>
+        <button className="btn" onClick={onExit}>
+          返回
+        </button>
+      </div>
+    );
+  }
+
+  const me = s.players[ME];
+  const foe = s.players[AI];
+
+  // ------------------------------------------------------------ 點擊處理
+  const needsTarget = (handUid: number, option?: number) => {
+    const req = g.playTargetReq(handUid, option);
+    if (!req) return false;
+    return g.validTargets(req, ME, g.cardIsSpell(handUid)).length > 0;
+  };
+
+  const afterOption = (handUid: number, option: number | undefined) => {
+    const def = g.handDef(me.hand.find((h) => h.uid === handUid)!);
+    if (def.type === 'MINION') setMode({ k: 'card', handUid, option, stage: 'place' });
+    else if (needsTarget(handUid, option)) setMode({ k: 'card', handUid, option, stage: 'target' });
+    else act({ type: 'play', handUid, option });
+  };
+
+  const onHandClick = (handUid: number) => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    const hc = me.hand.find((h) => h.uid === handUid)!;
+    const def = g.handDef(hc);
+    if (!myTurn) {
+      setInspect({ cardId: hc.cardId, def: g.liveDef(ME, hc) });
+      return;
+    }
+    setPrepPick(def.prepare || hc.canPrepare ? handUid : null);
+    if (mode.k === 'card' && mode.handUid === handUid && mode.stage === 'select') {
+      act({ type: 'play', handUid });
+      return;
+    }
+    const can = g.canPlay(handUid);
+    if (!can.ok) {
+      flash(can.reason ?? '無法打出');
+      if (!(def.prepare || hc.canPrepare)) setInspect({ cardId: hc.cardId });
+      return;
+    }
+    setInspect(null);
+    if (def.chooseOne) setMode({ k: 'card', handUid, stage: 'choose' });
+    else if (def.type === 'MINION') setMode({ k: 'card', handUid, stage: 'place' });
+    else if (needsTarget(handUid)) setMode({ k: 'card', handUid, stage: 'target' });
+    else setMode({ k: 'card', handUid, stage: 'select' });
+  };
+
+  /** 放開卡牌：在戰場上放開就出牌（手下依位置放置，偽裝手下放在對手半場就打在對手場上） */
+  const dropCard = (handUid: number, x: number, y: number) => {
+    const root = battleRef.current;
+    const hc = me.hand.find((h) => h.uid === handUid);
+    const boards = root?.querySelector('.boards')?.getBoundingClientRect();
+    const handTop = root?.querySelector('.my-hand')?.getBoundingClientRect().top ?? Infinity;
+    if (!hc || !boards || y > Math.min(boards.bottom + 30, handTop - 4) || y < boards.top - 40) return;
+    const def = g.handDef(hc);
+    const can = g.canPlay(handUid);
+    if (!can.ok) {
+      flash(can.reason ?? '無法打出');
+      return;
+    }
+    setInspect(null);
+    if (def.chooseOne) {
+      setMode({ k: 'card', handUid, stage: 'choose' });
+      return;
+    }
+    let position: number | undefined;
+    let side: 'enemy' | undefined;
+    if (def.type === 'MINION') {
+      const mid = boards.top + boards.height / 2;
+      side = def.disguised && y < mid && foe.board.length < 7 ? 'enemy' : undefined;
+      const cells = Array.from(root!.querySelectorAll<HTMLElement>(side ? '.foe-board [data-uid]' : '.my-board [data-uid]'));
+      position = cells.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.left + r.width / 2 < x;
+      }).length;
+    }
+    if (needsTarget(handUid)) setMode({ k: 'card', handUid, stage: 'target', position, side });
+    else act({ type: 'play', handUid, position, side });
+  };
+
+  /** 拖出瞄準箭頭：放開時指在合法目標上就執行，否則取消 */
+  const beginAim = (from: { x: number; y: number }, targets: number[], onHit: (uid: number) => void, onEnd?: () => void) => {
+    const set = new Set(targets);
+    const hitAt = (x: number, y: number) => {
+      for (const el of document.elementsFromPoint(x, y)) {
+        const d = (el as HTMLElement).closest<HTMLElement>('[data-uid]');
+        if (d && set.has(Number(d.dataset.uid))) return Number(d.dataset.uid);
+      }
+      return null;
+    };
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
+    setAim({ fx: from.x, fy: from.y, x: from.x, y: from.y, hit: null, set });
+    const move = (ev: PointerEvent) => setAim({ fx: from.x, fy: from.y, x: ev.clientX, y: ev.clientY, hit: hitAt(ev.clientX, ev.clientY), set });
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      setAim(null);
+      onEnd?.();
+      suppressClick.current = true;
+      window.setTimeout(() => (suppressClick.current = false), 50);
+      const t = ev.type === 'pointerup' ? hitAt(ev.clientX, ev.clientY) : null;
+      if (t !== null) onHit(t);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  const startPress = (handUid: number, e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // 滑鼠：避免瀏覽器接手成文字選取 / 原生拖曳，讓卡牌能自由跟著游標
+    if (e.pointerType === 'mouse') e.preventDefault();
+    const hc = me.hand.find((h) => h.uid === handUid);
+    if (!hc) return;
+    const st: { uid: number; sx: number; sy: number; dragging: boolean; long: boolean; timer: number; aim?: number[] } = { uid: handUid, sx: e.clientX, sy: e.clientY, dragging: false, long: false, timer: 0 };
+    // 手機：長按放大查看卡牌
+    if (e.pointerType !== 'mouse') {
+      st.timer = window.setTimeout(() => {
+        if (press.current === st && !st.dragging) {
+          st.long = true;
+          setInspect({ cardId: hc.cardId, def: g.liveDef(ME, hc) });
+        }
+      }, 420);
+    }
+    press.current = st;
+    const move = (ev: PointerEvent) => {
+      if (press.current !== st) return;
+      if (!st.dragging) {
+        if (Math.hypot(ev.clientX - st.sx, ev.clientY - st.sy) < 10) return;
+        window.clearTimeout(st.timer);
+        if (st.long || !myTurn || !g.canPlay(handUid).ok) return;
+        setInspect(null);
+        setMode({ k: 'idle' });
+        // 需要選目標的法術 / 武器：拖出箭頭瞄準，放開在目標上就施放
+        const def = g.handDef(hc);
+        const req = def.type !== 'MINION' && !def.chooseOne ? g.playTargetReq(handUid) : null;
+        if (req) {
+          const targets = g.validTargets(req, ME, g.cardIsSpell(handUid));
+          if (targets.length > 0) st.aim = targets;
+        }
+        st.dragging = true;
+      }
+      setDrag({ handUid, x: ev.clientX, y: ev.clientY });
+      // 需要目標的牌：半透明的牌先跟著手指，拖出手牌區後固定在那裡並拉出瞄準箭頭；在手牌區放開就取消
+      if (st.aim) {
+        const handTop = battleRef.current?.querySelector('.my-hand')?.getBoundingClientRect().top ?? Infinity;
+        if (ev.clientY < handTop - 4) {
+          const targets = st.aim;
+          detach();
+          beginAim({ x: ev.clientX, y: ev.clientY }, targets, (t) => act({ type: 'play', handUid, target: t }), () => setDrag(null));
+        }
+      }
+    };
+    // iOS：必須在 touchmove 阻止預設行為，瀏覽器才不會接手手勢（捲動 / 下拉）
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
+    const detach = () => {
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      window.clearTimeout(st.timer);
+      if (press.current === st) press.current = null;
+    };
+    const up = (ev: PointerEvent) => {
+      detach();
+      if (st.dragging) {
+        suppressClick.current = true;
+        window.setTimeout(() => (suppressClick.current = false), 50);
+        setDrag(null);
+        if (ev.type === 'pointerup') dropCard(handUid, ev.clientX, ev.clientY);
+      } else if (st.long) {
+        suppressClick.current = true;
+        window.setTimeout(() => (suppressClick.current = false), 50);
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  /** 已進入選目標狀態（點選手牌 / 戰吼 / 英雄能力 / 攻擊）時，按住拖動也能拉箭頭選目標 */
+  const onTargetDrag = (e: React.PointerEvent) => {
+    if (validTargets.size === 0) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('.hand-slot, button')) return;
+    const root = battleRef.current;
+    if (!root) return;
+    let originEl: Element | null = null;
+    if (mode.k === 'card') originEl = root.querySelector(`[data-hand-uid="${mode.handUid}"]`);
+    else if (mode.k === 'attack') originEl = root.querySelector(`[data-uid="${mode.attacker}"]`);
+    else if (mode.k === 'location') originEl = root.querySelector(`[data-loc-uid="${mode.uid}"]`);
+    else originEl = root.querySelector(`[data-hero="${ME}"]`);
+    if (!originEl) return;
+    const r = originEl.getBoundingClientRect();
+    const from = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
+    const detach = () => {
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', detach);
+      window.removeEventListener('pointercancel', detach);
+    };
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 10) return;
+      detach();
+      beginAim(from, [...validTargets], onTarget);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', detach);
+    window.addEventListener('pointercancel', detach);
+  };
+
+  /** 按住己方角色拖出箭頭攻擊；手機長按手下放大查看 */
+  const charPress = (c: Minion | Hero) => (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const el = e.currentTarget as HTMLElement;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    if (validTargets.size > 0) return; // 選目標狀態交給 onTargetDrag
+    const canAtk = myTurn && c.owner === ME && g.canAttack(c.uid);
+    let timer = 0;
+    if (!isHero(c) && e.pointerType !== 'mouse') {
+      timer = window.setTimeout(() => {
+        setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: g.liveMinionDef(c) });
+        suppressClick.current = true;
+        window.setTimeout(() => (suppressClick.current = false), 400);
+      }, 420);
+    }
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    if (canAtk) window.addEventListener('touchmove', block, { passive: false });
+    const detach = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', detach);
+      window.removeEventListener('pointercancel', detach);
+    };
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 10) return;
+      detach();
+      if (!canAtk) return;
+      const targets = g.attackTargets(c.uid);
+      if (targets.length === 0) return;
+      const r = el.getBoundingClientRect();
+      setMode({ k: 'idle' });
+      setInspect(null);
+      beginAim({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, targets, (t) => act({ type: 'attack', attacker: c.uid, target: t }));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', detach);
+    window.addEventListener('pointercancel', detach);
+  };
+
+  const onPlace = (position: number) => {
+    if (mode.k !== 'card') return;
+    if (needsTarget(mode.handUid, mode.option)) setMode({ ...mode, position, stage: 'target' });
+    else act({ type: 'play', handUid: mode.handUid, option: mode.option, position });
+  };
+
+  const onPlaceEnemy = (position: number) => {
+    if (mode.k !== 'card') return;
+    act({ type: 'play', handUid: mode.handUid, option: mode.option, position, side: 'enemy' });
+  };
+
+  const onTarget = (uid: number) => {
+    if (mode.k === 'attack') act({ type: 'attack', attacker: mode.attacker, target: uid });
+    else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid, option: mode.option });
+    else if (mode.k === 'heroPower2') act({ type: 'heroPower2', target: uid });
+    else if (mode.k === 'location') act({ type: 'location', uid: mode.uid, target: uid });
+    else if (mode.k === 'card') act({ type: 'play', handUid: mode.handUid, target: uid, option: mode.option, position: mode.position, side: mode.side });
+  };
+
+  const onCharClick = (c: Minion | Hero) => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (validTargets.has(c.uid)) {
+      onTarget(c.uid);
+      return;
+    }
+    if (myTurn && c.owner === ME && g.canAttack(c.uid)) {
+      if (mode.k === 'attack' && mode.attacker === c.uid) setMode({ k: 'idle' });
+      else setMode({ k: 'attack', attacker: c.uid });
+      setInspect(null);
+      return;
+    }
+    if (mode.k !== 'idle') {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: g.liveMinionDef(c) });
+  };
+
+  const onLocationClick = (l: Location) => {
+    if (!myTurn || l.owner !== ME) return;
+    if (mode.k === 'location' && mode.uid === l.uid) {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (l.cooldown > 0) {
+      flash(`冷卻中（還要 ${l.cooldown} 個回合）`);
+      return;
+    }
+    const req = g.locationTargetReq(l.uid);
+    if (req && g.validTargets(req, ME, true).length) {
+      setInspect(null);
+      setMode({ k: 'location', uid: l.uid });
+    } else if (req && !req.optional) flash('沒有可選擇的目標');
+    else act({ type: 'location', uid: l.uid });
+  };
+
+  const onHeroPower = () => {
+    if (!myTurn) return;
+    if (!g.canHeroPower()) {
+      flash(me.heroPower.used && me.mana >= g.heroPowerCost(me) ? '本回合已使用過英雄能力' : '無法使用英雄能力');
+      return;
+    }
+    if (mode.k === 'heroPower' || mode.k === 'powerChoose') {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (g.heroPowerOptions()) setMode({ k: 'powerChoose' });
+    else if (g.heroPowerNeedsTarget()) setMode({ k: 'heroPower' });
+    else act({ type: 'heroPower' });
+  };
+
+  const onSecondPower = () => {
+    if (!myTurn) return;
+    const r = g.canSecondPower();
+    if (!r.ok) {
+      flash(r.reason ?? '無法使用英雄能力');
+      return;
+    }
+    if (mode.k === 'heroPower2') {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (g.secondPowerSpec(me)?.target) setMode({ k: 'heroPower2' });
+    else act({ type: 'heroPower2' });
+  };
+
+  const onLaunch = () => {
+    if (!myTurn) return;
+    const r = g.canLaunch();
+    if (!r.ok) {
+      flash(r.reason ?? '無法發射星艦');
+      return;
+    }
+    setMode({ k: 'idle' });
+    act({ type: 'launch' });
+  };
+
+  const inspectShip = (pid: PlayerId) => (on: boolean) => {
+    const def = g.starshipPreview(pid);
+    setInspect(on && def ? { cardId: def.id, def, atk: def.attack, hp: def.health } : null);
+  };
+
+  const onPowerOption = (option: number) => {
+    if (g.heroPowerNeedsTarget(option)) setMode({ k: 'heroPower', option });
+    else act({ type: 'heroPower', option });
+  };
+
+  const selectedHand = mode.k === 'card' ? mode.handUid : null;
+  const canTrade = selectedHand !== null && g.check({ type: 'trade', handUid: selectedHand }).ok;
+  const prepHand = prepPick !== null ? me.hand.find((h) => h.uid === prepPick) : undefined;
+  const canPrepare = myTurn && !!prepHand && g.check({ type: 'prepare', handUid: prepHand.uid }).ok;
+  const selectedDef = selectedHand !== null ? getCard(me.hand.find((h) => h.uid === selectedHand)?.cardId ?? 'GAME_005') : null;
+  const placing = mode.k === 'card' && mode.stage === 'place';
+  // 偽裝手下可以打在對手的戰場上
+  const placingEnemy = placing && !!selectedDef?.disguised && foe.board.length < 7;
+
+  const hint = (() => {
+    if (s.phase === 'mulligan') return '';
+    if (!myTurn) return s.pendingChoice ? '' : `${foe.name}的回合…`;
+    if (mode.k === 'card') {
+      const tip = selectedDef ? playHint(selectedDef) : '';
+      const more = tip ? `　💡${tip}` : '';
+      if (mode.stage === 'place') return (selectedDef?.disguised ? '點選我方戰場放置手下（偽裝手下也可以點對手的戰場，Esc 取消）' : '點選戰場放置手下（Esc 取消）') + more;
+      if (mode.stage === 'target') return '選擇目標（Esc 取消）' + more;
+      if (mode.stage === 'select') return '再點一次卡牌或點戰場使用' + more;
+    }
+    if (mode.k === 'attack') return '選擇攻擊目標（Esc 取消）';
+    if (mode.k === 'heroPower' || mode.k === 'heroPower2') return '選擇英雄能力的目標';
+    if (mode.k === 'location') return '選擇地點的目標（Esc 取消）';
+    return '';
+  })();
+
+  const charClasses = (c: Minion | Hero) => {
+    const cls: string[] = [];
+    if (validTargets.has(c.uid) || aim?.set.has(c.uid)) cls.push('targetable');
+    if (myTurn && c.owner === ME && mode.k === 'idle' && g.canAttack(c.uid)) cls.push('can-attack');
+    if (mode.k === 'attack' && mode.attacker === c.uid) cls.push('attacking-selected');
+    return cls.join(' ');
+  };
+
+  const renderMinion = (m: Minion) => (
+    <MinionView
+      key={m.uid}
+      m={m}
+      g={g}
+      className={charClasses(m)}
+      onClick={() => onCharClick(m)}
+      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: g.liveMinionDef(m) } : null)}
+      onPointerDown={charPress(m)}
+    />
+  );
+
+  return (
+    <div
+      ref={battleRef}
+      className={`battle ${myTurn ? 'my-turn' : ''}`}
+      style={{ '--mw': `${mw}px`, '--hw': `${hw}px`, '--cw': `${cw}px` } as CSSProperties}
+      onPointerDown={onTargetDrag}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMode({ k: 'idle' });
+      }}
+    >
+      <div className="battle-topbar">
+        <button className="btn small" onClick={() => setMenu(!menu)}>
+          ☰ 選單
+        </button>
+        <span className="battle-title">
+          {ladder ? (
+            <>
+              🏆 天梯・{foe.name}（{ladder.rank.label}・{CLASS_NAMES[foe.heroClass]}）
+            </>
+          ) : config.dungeon ? (
+            <>
+              🕯 地城探險・第 {config.dungeon.wins + 1} 關・{foe.name}
+              {(me.passives ?? []).length > 0 && <>・寶藏：{(me.passives ?? []).map((id) => getCard(id).name).join('、')}</>}
+            </>
+          ) : (
+            <>
+              對戰 {CLASS_NAMES[foe.heroClass]}（{DIFFICULTY_NAMES[config.difficulty]}）
+            </>
+          )}
+          ・第 {Math.max(1, Math.ceil(s.turn / 2))} 回合
+        </span>
+        <button className="btn small" onClick={() => setShowHelp(true)}>
+          📖 機制
+        </button>
+        <button className="btn small" onClick={() => setShowLog(!showLog)}>
+          📜 紀錄
+        </button>
+      </div>
+      {showHelp && (
+        <div className="help-modal" onClick={() => setShowHelp(false)}>
+          <div className="help-box" onClick={(e) => e.stopPropagation()}>
+            <button className="btn small" onClick={() => setShowHelp(false)}>
+              ✕ 關閉
+            </button>
+            <GlossaryBrowser />
+          </div>
+        </div>
+      )}
+      {menu && (
+        <div className="battle-menu">
+          <button
+            className="btn danger"
+            onClick={() => {
+              setMenu(false);
+              if (s.phase !== 'over') act({ type: 'concede', player: ME });
+            }}
+          >
+            🏳️ 投降
+          </button>
+          <button className="btn" onClick={() => setMenu(false)}>
+            繼續對戰
+          </button>
+        </div>
+      )}
+
+      {/* ---------------- 對手區 ---------------- */}
+      <div className="side foe-side">
+        <div className="hand foe-hand">
+          {foe.hand.map((h) => (
+            <span key={h.uid} data-hand-uid={h.uid}>
+              <CardBack width={46} />
+            </span>
+          ))}
+        </div>
+        <div className="hero-row">
+          <PlayerInfo p={foe} />
+          <WeaponView p={foe} g={g} />
+          <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
+            {emotes
+              .filter((x) => x.player === AI)
+              .map((x) => (
+                <div key={x.id} className="emote-bubble">
+                  {EMOTE_TEXT[x.emote]}
+                </div>
+              ))}
+          </HeroView>
+          <HeroPowerView p={foe} g={g} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
+          {foe.heroPower2 && <HeroPowerView p={foe} g={g} second usable={false} onHover={(on) => setInspect(on ? { power: AI, second: true } : null)} />}
+          <StarshipView p={foe} g={g} usable={false} onHover={inspectShip(AI)} />
+        </div>
+      </div>
+
+      <div className="boards" onClick={() => mode.k === 'card' && mode.stage === 'select' && act({ type: 'play', handUid: mode.handUid })}>
+        <div
+          className="board foe-board"
+          onClick={(e) => {
+            if (placingEnemy) {
+              e.stopPropagation();
+              onPlaceEnemy(foe.board.length);
+            }
+          }}
+        >
+          {(foe.locations ?? []).map((l) => (
+            <span className="board-cell" key={l.uid}>
+              <LocationView l={l} className="" onClick={() => undefined} onHover={(on) => setInspect(on ? { cardId: l.cardId } : null)} />
+            </span>
+          ))}
+          {foe.board.map((m) => (
+            <span className="board-cell" key={m.uid}>
+              {renderMinion(m)}
+            </span>
+          ))}
+        </div>
+        <div className="board-divider">
+          <span className="hint">{hint}</span>
+          <button className={`end-turn ${myTurn ? 'ready' : ''}`} disabled={!myTurn} onClick={(e) => { e.stopPropagation(); act({ type: 'endTurn' }); }}>
+            {myTurn ? '結束回合' : '對手回合'}
+          </button>
+        </div>
+        <div
+          className={`board my-board ${placing ? 'placing' : ''}`}
+          onClick={(e) => {
+            if (placing) {
+              e.stopPropagation();
+              onPlace(me.board.length);
+            }
+          }}
+        >
+          {(me.locations ?? []).map((l) => (
+            <span className="board-cell" key={l.uid}>
+              <LocationView
+                l={l}
+                className={`${mode.k === 'location' && mode.uid === l.uid ? 'selected' : ''} ${myTurn && l.cooldown === 0 ? 'ready' : ''}`}
+                onClick={() => onLocationClick(l)}
+                onHover={(on) => setInspect(on ? { cardId: l.cardId } : null)}
+              />
+            </span>
+          ))}
+          {me.board.map((m) => (
+            <span className="board-cell" key={m.uid}>
+              {renderMinion(m)}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------------- 我方區 ---------------- */}
+      <div className="side my-side">
+        <div className="hero-row">
+          <PlayerInfo p={me} />
+          <WeaponView p={me} g={g} />
+          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)} onPointerDown={charPress(me.hero)}>
+            {emotes
+              .filter((x) => x.player === ME)
+              .map((x) => (
+                <div key={x.id} className="emote-bubble">
+                  {EMOTE_TEXT[x.emote]}
+                </div>
+              ))}
+            {ladder && (
+              <button
+                className="emote-toggle"
+                title="表情"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEmoteMenu(!emoteMenu);
+                }}
+              >
+                💬
+              </button>
+            )}
+            {emoteMenu && (
+              <div className="emote-menu" onClick={(e) => e.stopPropagation()}>
+                {(Object.keys(EMOTE_NAMES) as Emote[]).map((e) => (
+                  <button key={e} onClick={() => playerEmote(e)}>
+                    {EMOTE_NAMES[e]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </HeroView>
+          <HeroPowerView
+            p={me}
+            g={g}
+            usable={myTurn && g.canHeroPower()}
+            active={mode.k === 'heroPower' || mode.k === 'powerChoose'}
+            onClick={onHeroPower}
+            onHover={(on) => setInspect(on ? { power: ME } : null)}
+          />
+          {me.heroPower2 && (
+            <HeroPowerView
+              p={me}
+              g={g}
+              second
+              usable={myTurn && g.canSecondPower().ok}
+              active={mode.k === 'heroPower2'}
+              onClick={onSecondPower}
+              onHover={(on) => setInspect(on ? { power: ME, second: true } : null)}
+            />
+          )}
+          <StarshipView p={me} g={g} usable={myTurn && g.canLaunch().ok} onClick={onLaunch} onHover={inspectShip(ME)} />
+        </div>
+        <div className="hand my-hand" style={{ '--n': me.hand.length } as CSSProperties}>
+          {me.hand.map((h, i) => {
+            const def = g.handDef(h);
+            const playable = myTurn && g.canPlay(h.uid).ok;
+            const echo = g.hasEcho(ME, h);
+            return (
+              <div
+                key={h.uid}
+                data-hand-uid={h.uid}
+                className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''} ${h.echo ? 'echo-copy' : ''} ${drag?.handUid === h.uid ? 'dragging' : ''}`}
+                onPointerDown={(e) => startPress(h.uid, e)}
+                onDragStart={(e) => e.preventDefault()}
+                style={{ '--i': i } as CSSProperties}
+                title={h.echo ? '回音的複製：只能在本回合使用' : undefined}
+              >
+                <CardView
+                  cardId={h.cardId}
+                  def={g.liveDef(ME, h)}
+                  width={cw}
+                  cost={g.costOf(me, h)}
+                  attack={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).atk : undefined}
+                  health={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).hp : undefined}
+                  spellDamage={g.spellDamage(ME)}
+                  playable={playable}
+                  selected={selectedHand === h.uid}
+                  onClick={() => onHandClick(h.uid)}
+                />
+                {echo && <span className="echo-badge">回音</span>}
+                {h.prepared && <span className="echo-badge prepared-badge">已預備</span>}
+                {g.costKind(me, h) !== 'mana' && (
+                  <span className={`cost-kind ${g.costKind(me, h)}`} title={g.costKind(me, h) === 'health' ? '消耗生命值而不是法力' : '消耗屍體而不是法力'}>
+                    {g.costKind(me, h) === 'health' ? '❤' : '💀'}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ---------------- 浮動資訊 ---------------- */}
+      {inspect && 'power' in inspect && (
+        <div className="inspect" onClick={() => setInspect(null)}>
+          <div className="power-card">
+            <b>{(inspect.second ? g.secondPowerInfo(s.players[inspect.power]) : g.powerInfo(s.players[inspect.power]))?.name}</b>
+            <span className="muted small">
+              英雄能力・消耗 {(inspect.second ? g.secondPowerInfo(s.players[inspect.power]) : g.powerInfo(s.players[inspect.power]))?.cost}
+              {inspect.second ? ' 具屍體' : ''}
+            </span>
+            <p dangerouslySetInnerHTML={{ __html: formatCardText((inspect.second ? g.secondPowerInfo(s.players[inspect.power]) : g.powerInfo(s.players[inspect.power]))?.text ?? '') }} />
+          </div>
+        </div>
+      )}
+      {inspect && 'cardId' in inspect && hasCard(inspect.cardId) && (
+        <div className="inspect" onClick={() => setInspect(null)}>
+          <CardView cardId={inspect.cardId} def={inspect.def} width={vp.w < 700 ? Math.round(Math.min(vp.w * 0.78, vp.h * 0.5, 340)) : 260} attack={inspect.atk} health={inspect.hp} />
+          <Glossary cardId={inspect.cardId} def={inspect.def} minion={inspect.uid !== undefined ? g.minion(inspect.uid) : null} g={g} />
+        </div>
+      )}
+      {toast && <div className="toast">{toast}</div>}
+      {aim && (
+        <svg className="aim-arrow" width="100%" height="100%">
+          <defs>
+            <marker id="aimhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 z" fill={aim.hit !== null ? '#ff3b3b' : '#f5d36b'} />
+            </marker>
+          </defs>
+          <line x1={aim.fx} y1={aim.fy} x2={aim.x} y2={aim.y} stroke={aim.hit !== null ? '#ff3b3b' : '#f5d36b'} strokeWidth="10" strokeLinecap="round" strokeDasharray="1 14" markerEnd="url(#aimhead)" />
+        </svg>
+      )}
+      {drag && (() => {
+        const hc = me.hand.find((h) => h.uid === drag.handUid);
+        if (!hc) return null;
+        return (
+          <div className="drag-ghost" style={{ left: drag.x, top: drag.y } as CSSProperties}>
+            <CardView cardId={hc.cardId} def={g.liveDef(ME, hc)} width={Math.round(cw * 1.1)} cost={g.costOf(me, hc)} />
+          </div>
+        );
+      })()}
+      {canPrepare && prepHand && (
+        <button className="btn trade-btn prepare-btn" onClick={() => act({ type: 'prepare', handUid: prepHand.uid })}>
+          🛠 預備（花光 {me.mana} 點法力，之後消耗減少 {me.mana + 1}）
+        </button>
+      )}
+      {canTrade && selectedHand !== null && (
+        <button className="btn trade-btn" onClick={() => act({ type: 'trade', handUid: selectedHand })}>
+          🔁 交易（1 法力：洗回牌堆並抽一張）
+        </button>
+      )}
+      {turnBanner > 0 && (
+        <div className="turn-banner" key={`turn-${turnBanner}`}>
+          你的回合
+        </div>
+      )}
+      {cast && (
+        <div className={`cast-card ${cast.player === ME ? 'mine' : 'theirs'}`} key={`cast-${cast.id}`}>
+          {cast.player !== ME && getCard(cast.cardId).secret ? <div className="secret-card">?</div> : <CardView cardId={cast.cardId} width={210} />}
+        </div>
+      )}
+      {banner && (
+        <div className="play-banner" key={`banner-${banner.id}`}>
+          <div className="banner-text">{banner.text}</div>
+          {banner.cardId && <CardView cardId={banner.cardId} width={200} />}
+        </div>
+      )}
+      {showLog && (
+        <div className="log-panel">
+          <div className="log-head">
+            對戰紀錄 <button onClick={() => setShowLog(false)}>✕</button>
+          </div>
+          <ul>
+            {[...s.log].reverse().map((l, i) => (
+              <li key={i} className={l.player === ME ? 'mine' : l.player === AI ? 'theirs' : ''}>
+                {l.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ---------------- 視窗 ---------------- */}
+      {s.phase === 'mulligan' && !me.mulliganDone && (
+        <div className="modal">
+          <div className="modal-box">
+            <h2>起手換牌</h2>
+            <p>{s.first === ME ? '你是先攻' : '你是後攻（會獲得幸運幣）'}，點選想換掉的卡牌。</p>
+            <div className="card-row">
+              {me.hand.map((h) => (
+                <div key={h.uid} className={`mulligan-card ${mulliganPick.has(h.uid) ? 'replace' : ''}`}>
+                  <CardView
+                    cardId={h.cardId}
+                    def={g.liveDef(ME, h)}
+                    width={150}
+                    onClick={() => {
+                      const next = new Set(mulliganPick);
+                      if (next.has(h.uid)) next.delete(h.uid);
+                      else next.add(h.uid);
+                      setMulliganPick(next);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              className="btn big primary"
+              onClick={() => {
+                g.apply({ type: 'mulligan', player: ME, replace: [...mulliganPick] });
+                refresh();
+              }}
+            >
+              確定
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode.k === 'powerChoose' && g.heroPowerOptions() && (
+        <div className="modal" onClick={() => setMode({ k: 'idle' })}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>{g.powerInfo(me).name}：二選一</h2>
+            <div className="card-row">
+              {g.heroPowerOptions()!.map((o, i) => {
+                const ok = g.canHeroPower(i);
+                return (
+                  <button key={o.id} className={`choose-option ${ok ? '' : 'disabled'}`} disabled={!ok} onClick={() => onPowerOption(i)}>
+                    <Art cardId={o.id} className="choose-art" label={(o.name ?? '').slice(0, 2)} color={CLASS_COLORS[me.heroClass]} />
+                    <b>{o.name}</b>
+                    <span dangerouslySetInnerHTML={{ __html: formatCardText(o.text ?? '') }} />
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn" onClick={() => setMode({ k: 'idle' })}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode.k === 'card' && mode.stage === 'choose' && selectedDef?.chooseOne && (
+        <div className="modal" onClick={() => setMode({ k: 'idle' })}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>二選一</h2>
+            <div className="card-row">
+              {selectedDef.chooseOne.map((o, i) => {
+                const ok = g.canPlay(mode.handUid, i).ok;
+                return (
+                  <button key={o.id} className={`choose-option ${ok ? '' : 'disabled'}`} disabled={!ok} onClick={() => afterOption(mode.handUid, i)}>
+                    <Art cardId={o.transformInto ?? selectedDef.id} className="choose-art" />
+                    <b>{o.name}</b>
+                    <span dangerouslySetInnerHTML={{ __html: formatCardText(o.text) }} />
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn" onClick={() => setMode({ k: 'idle' })}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {s.pendingChoice && s.pendingChoice.player === ME && (
+        <div className="modal">
+          <div className="modal-box">
+            <h2>{s.pendingChoice.title}</h2>
+            <div className="card-row">
+              {s.pendingChoice.options.map((id, i) => (
+                <CardView key={id + i} cardId={id} width={170} playable onClick={() => act({ type: 'choose', index: i })} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {s.phase === 'over' && (
+        <div className="modal">
+          <div className={`modal-box result ${reward?.result ?? ''}`}>
+            <h1>{s.winner === ME ? '🏆 勝利！' : s.winner === 'draw' ? '平手' : '💀 落敗'}</h1>
+            {reward?.change && ladder && <RankChangeView change={reward.change} />}
+            {ladder && (
+              <p className="muted small">
+                對手：{ladder.name}・{ladder.deckName}（{DECK_KIND_NAMES[ladder.deckKind]}）
+              </p>
+            )}
+            {reward && config.dungeon && (
+              <p className="reward-line">{s.winner === ME ? '選擇你的獎勵，繼續深入地城！' : '這一輪探險結束了。'}</p>
+            )}
+            {reward && !config.dungeon && (
+              <p className="reward-line">
+                獲得 <b>🪙 {reward.gold}</b> 金幣{reward.daily > 0 && <>（含每日首勝 {reward.daily}）</>}
+              </p>
+            )}
+            {!config.dungeon && <p className="muted">目前金幣：{profile.gold}</p>}
+            <div className="row">
+              <button className="btn big primary" onClick={onRematch}>
+                {config.dungeon ? '繼續' : ladder ? '🔍 繼續配對' : '再戰一場'}
+              </button>
+              <button className="btn big" onClick={onExit}>
+                {ladder ? '返回天梯' : '返回主選單'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 子元件
+// ============================================================================
+
+function RankChangeView({ change }: { change: LadderChange }) {
+  const { before, after } = change;
+  const legendDelta = before.legend && after.legend ? before.legend - after.legend : 0;
+  return (
+    <div className="rank-change">
+      <div className="rank-change-row">
+        <RankBadge info={after} size={72} />
+        <div>
+          <b style={{ color: after.color }}>{after.label}</b>
+          <RankPips info={after} />
+        </div>
+      </div>
+      <div className="rank-change-note">
+        {change.promoted && <span className="promoted">🎉 {change.promoted}</span>}
+        {change.stars > 0 && <span className="up">+{change.stars} ★{change.streakBonus && '（連勝加成）'}</span>}
+        {change.stars < 0 && <span className="down">−1 ★</span>}
+        {change.protectedByFloor && <span className="muted">保底：這個牌階不會再往下掉</span>}
+        {legendDelta > 0 && <span className="up">名次上升 {legendDelta}</span>}
+        {legendDelta < 0 && <span className="down">名次下降 {-legendDelta}</span>}
+        {before.label !== after.label && !after.legend && <span className="muted">{before.label} → {after.label}</span>}
+      </div>
+    </div>
+  );
+}
+
+const KEYWORDS_SHOWN = ['TAUNT', 'DIVINE_SHIELD', 'CHARGE', 'RUSH', 'WINDFURY', 'MEGA_WINDFURY', 'STEALTH', 'POISONOUS', 'LIFESTEAL', 'REBORN', 'ELUSIVE', 'FREEZE_ON_DAMAGE'] as const;
+
+function Glossary({ cardId, def: given, minion, g }: { cardId: string; def?: CardDef; minion: Minion | null; g: Game }) {
+  const def = given ?? getCard(cardId);
+  const extra = minion ? KEYWORDS_SHOWN.filter((k) => g.hasKw(minion, k)) : [];
+  const entries = glossaryFor(def, extra);
+  const status: string[] = [];
+  if (minion?.frozen) status.push('已被冰凍：錯過下一次攻擊');
+  if (minion?.silenced) status.push('已被沉默：失去所有卡牌敘述的效果');
+  if (def.flags?.includes('noTurnDraw')) status.push('在場上時，你的回合開始時不會抽牌');
+  if (def.flags?.includes('enemyNoHeal')) status.push('在場上時，敵方角色無法被治療');
+  if (def.flags?.includes('doubleCorpses')) status.push('在場上時，你獲得的屍體加倍');
+  if (!entries.length && !status.length) return null;
+  return (
+    <ul className="glossary">
+      {entries.map((e) => (
+        <li key={e.term}>
+          <b>{e.term}</b>：{e.desc}
+          {e.how && <span className="gloss-how">　▸ {e.how}</span>}
+        </li>
+      ))}
+      {status.map((t) => (
+        <li key={t}>{t}</li>
+      ))}
+    </ul>
+  );
+}
+
+function MinionView({
+  m,
+  g,
+  className,
+  onClick,
+  onHover,
+  onPointerDown,
+  children,
+}: {
+  m: Minion;
+  g: Game;
+  className: string;
+  onClick: () => void;
+  onHover: (on: boolean) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  children?: ReactNode;
+}) {
+  const def = g.minionDef(m);
+  const atk = g.atkOf(m);
+  const kw = (k: Parameters<Game['hasKw']>[1]) => g.hasKw(m, k);
+  const hasDeathrattle = !m.silenced && m.abilities.some((a) => a.on.k === 'deathrattle');
+  const hasTrigger = !m.silenced && (m.abilities.some((a) => a.on.k !== 'play' && a.on.k !== 'deathrattle') || m.auras.length > 0);
+  // 即將發動的能力：法術迸發、回合開始 / 結束的效果、休眠
+  const burstReady = !m.silenced && m.abilities.some((a) => a.once && a.on.k === 'spellCast');
+  const turnPending =
+    !m.silenced &&
+    m.abilities.some((a) => (a.on.k === 'turnEnd' || a.on.k === 'turnStart') && (a.on.whose === 'each' || (a.on.whose === 'mine') === (a.on.k === 'turnEnd' ? g.s.current === m.owner : g.s.current !== m.owner)));
+  const hpClass = m.hp < m.maxHp ? 'damaged' : m.maxHp > (def.health ?? 0) ? 'buffed' : '';
+  const atkClass = atk > (def.attack ?? 0) ? 'buffed' : atk < (def.attack ?? 0) ? 'damaged' : '';
+  return (
+    <div
+      data-uid={m.uid}
+      className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${kw('DORMANT') ? 'dormant' : ''} ${burstReady ? 'burst-ready' : ''} ${turnPending ? 'turn-pending' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onPointerDown={onPointerDown}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+    >
+      <div className="minion-portrait">
+        <Art cardId={m.cardId} />
+      </div>
+      <div className={`minion-atk ${atkClass}`}>{atk}</div>
+      <div className={`minion-hp ${hpClass}`}>{m.hp}</div>
+      <div className="minion-icons">
+        {hasDeathrattle && <span title="亡語">💀</span>}
+        {hasTrigger && <span title="觸發 / 光環">⚡</span>}
+        {kw('POISONOUS') && <span title="劇毒">🧪</span>}
+        {kw('LIFESTEAL') && <span title="生命竊取">🩸</span>}
+        {(kw('WINDFURY') || kw('MEGA_WINDFURY')) && <span title="風怒">🌀</span>}
+        {kw('REBORN') && <span title="復生">👼</span>}
+        {m.spellDamage > 0 && !m.silenced && <span title="法術傷害">🔮</span>}
+        {m.silenced && <span title="已沉默">🔇</span>}
+        {burstReady && <span title="法術迸發：你下一次施放法術時發動">✨</span>}
+        {turnPending && <span title="這個回合會發動回合開始 / 結束的效果">⏳</span>}
+        {kw('DORMANT') && m.dormantTurns !== undefined && <span title={`休眠中：還要 ${m.dormantTurns} 個回合甦醒`}>💤{m.dormantTurns}</span>}
+      </div>
+      {m.sleeping && !kw('CHARGE') && m.owner === g.s.current && <div className="zzz">z z</div>}
+      {children}
+    </div>
+  );
+}
+
+function LocationView({ l, className, onClick, onHover }: { l: Location; className: string; onClick: () => void; onHover: (on: boolean) => void }) {
+  const def = getCard(l.cardId);
+  // 長按顯示資訊，輕點啟用
+  const timer = useRef<number | null>(null);
+  const longPressed = useRef(false);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  return (
+    <div
+      data-loc-uid={l.uid}
+      className={`location ${l.cooldown > 0 ? 'cooling' : ''} ${className}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (longPressed.current) {
+          longPressed.current = false;
+          return;
+        }
+        onClick();
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse') return;
+        longPressed.current = false;
+        clear();
+        timer.current = window.setTimeout(() => {
+          longPressed.current = true;
+          onHover(true);
+        }, 400);
+      }}
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onContextMenu={(e) => e.preventDefault()}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      title={`${def.name}（耐久度 ${l.durability}）`}
+    >
+      <div className="location-portrait">
+        <Art cardId={l.cardId} label={def.name} color="#8a6a3a" />
+      </div>
+      <div className="location-dur">{l.durability}</div>
+      {l.cooldown > 0 && <div className="location-cd">⏳{l.cooldown}</div>}
+      <div className="location-name">{def.name}</div>
+    </div>
+  );
+}
+
+function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: PlayerState; g: Game; className: string; onClick: () => void; onPointerDown?: (e: React.PointerEvent) => void; children?: ReactNode }) {
+  const h = p.hero;
+  const atk = g.atkOf(h);
+  return (
+    <div
+      data-uid={h.uid}
+      data-hero={p.id}
+      onPointerDown={onPointerDown}
+      className={`hero ${h.frozen ? 'frozen' : ''} ${h.immune ? 'immune' : ''} ${className}`}
+      style={{ '--class': CLASS_COLORS[p.heroClass] } as CSSProperties}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      <div className="hero-portrait">
+        <Art cardId={h.cardId} label={CLASS_NAMES[p.heroClass]} color={CLASS_COLORS[p.heroClass]} />
+      </div>
+      {(p.secrets.length > 0 || p.quest || p.quest2 || (p.eternal ?? []).some((e) => e.objective)) && (
+        <div className="secrets">
+          {(p.eternal ?? [])
+            .filter((e, i, arr) => e.objective && arr.findIndex((x) => x.objective && x.sourceCardId === e.sourceCardId) === i)
+            .map((e) => (
+              <span key={e.sourceCardId} className="secret objective" title={`目標：${getCard(e.sourceCardId).name}`}>
+                ◆
+              </span>
+            ))}
+          {p.quest && (
+            <span className="secret quest" title={`任務：${getCard(p.quest.cardId).name}（${p.quest.progress}/${getCard(p.quest.cardId).quest?.goal ?? '?'}）`}>
+              !
+            </span>
+          )}
+          {p.quest2 && (
+            <span className="secret quest" title={`任務：${getCard(p.quest2.cardId).name}（${p.quest2.progress}/${getCard(p.quest2.cardId).quest?.goal ?? '?'}）`}>
+              !
+            </span>
+          )}
+          {p.secrets.map((sec) => (
+            <span key={sec.uid} className="secret" title={p.id === ME ? getCard(sec.cardId).name : '奧秘'}>
+              ?
+            </span>
+          ))}
+        </div>
+      )}
+      {h.divineShield && <div className="hero-shield" title="聖盾：抵擋下一次傷害" />}
+      {atk > 0 && <div className="hero-atk">{atk}</div>}
+      <div className={`hero-hp ${h.hp < h.maxHp ? 'damaged' : ''}`}>{h.hp}</div>
+      {h.armor > 0 && <div className="hero-armor">{h.armor}</div>}
+      <div className="hero-name">{p.name}</div>
+      {children}
+    </div>
+  );
+}
+
+function HeroPowerView({
+  p,
+  g,
+  usable,
+  active,
+  second,
+  onClick,
+  onHover,
+}: {
+  p: PlayerState;
+  g: Game;
+  usable: boolean;
+  active?: boolean;
+  /** 第二個英雄能力（消耗屍體） */
+  second?: boolean;
+  onClick?: () => void;
+  onHover?: (on: boolean) => void;
+}) {
+  const info = (second ? g.secondPowerInfo(p) : null) ?? g.powerInfo(p);
+  const slot = second && p.heroPower2 ? p.heroPower2 : p.heroPower;
+  return (
+    <button
+      data-power={slot.id}
+      data-power-owner={second ? undefined : p.id}
+      className={`hero-power ${slot.used && !usable ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+    >
+      <Art cardId={slot.id} className="hp-art" label={info.name.slice(0, 2)} color={CLASS_COLORS[p.heroClass]} />
+      <span className="hp-cost">{info.cost}</span>
+      <span className="hp-name">{info.name}</span>
+    </button>
+  );
+}
+
+/** 正在建造的星艦：顯示組件數量、目前的數值與發射消耗 */
+function StarshipView({
+  p,
+  g,
+  usable,
+  onClick,
+  onHover,
+}: {
+  p: PlayerState;
+  g: Game;
+  usable: boolean;
+  onClick?: () => void;
+  onHover?: (on: boolean) => void;
+}) {
+  const def = g.starshipPreview(p.id);
+  if (!def) return null;
+  return (
+    <button
+      className={`starship ${usable ? 'usable' : ''}`}
+      title={`${def.name}：${p.starship!.length} 個組件，花 ${g.launchCost(p)} 點法力發射`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+    >
+      <Art cardId={def.id} className="ship-art" label="星艦" color="#3c4f7a" />
+      <span className="ship-cost">{g.launchCost(p)}</span>
+      <span className="ship-atk">{def.attack}</span>
+      <span className="ship-hp">{def.health}</span>
+      <span className="ship-label">{usable ? '發射！' : `星艦 ×${p.starship!.length}`}</span>
+    </button>
+  );
+}
+
+function WeaponView({ p, g }: { p: PlayerState; g: Game }) {
+  const w = p.weapon;
+  if (!w) return <div className="weapon empty" />;
+  return (
+    <div className="weapon" title={getCard(w.cardId).name}>
+      <Art cardId={w.cardId} />
+      <span className="w-atk">{g.weaponAtk(p)}</span>
+      <span className="w-dur">{w.durability}</span>
+    </div>
+  );
+}
+
+function PlayerInfo({ p }: { p: PlayerState }) {
+  return (
+    <div className="player-info">
+      <div className="mana">
+        <span className="mana-text">
+          💎 {p.mana}/{p.maxMana}
+        </span>
+        <div className="crystals">
+          {Array.from({ length: 10 + (p.manaCapBonus ?? 0) }, (_, i) => (
+            <span key={i} className={`crystal ${i < p.mana ? 'full' : i < p.maxMana ? 'empty' : 'none'} ${i >= p.maxMana - p.overloadLocked && i < p.maxMana ? 'locked' : ''}`} />
+          ))}
+        </div>
+        {p.overloadOwed > 0 && <span className="overload">超載 {p.overloadOwed}</span>}
+      </div>
+      <div className="deck-count" title="牌庫剩餘" data-deck={p.id}>
+        🂠 {p.deck.length}
+      </div>
+      <div className="hand-count" title="手牌數">
+        ✋ {p.hand.length}
+      </div>
+      {(p.heroClass === 'DEATHKNIGHT' || !!p.corpses) && (
+        <div className="corpse-count" title="屍體：友方手下死亡時獲得，可被死亡騎士的卡牌消耗">
+          <span key={p.corpses} className="corpse-n">
+            💀 {p.corpses ?? 0}
+          </span>
+        </div>
+      )}
+      <StatusChips p={p} />
+    </div>
+  );
+}
+
+/** 「即將發動」的效果：延遲效果、目標、下一張牌的折扣、吉的力量的計數…… */
+function statusChips(p: PlayerState): { text: string; title: string }[] {
+  const out: { text: string; title: string }[] = [];
+  const nameOf = (id: string) => (hasCard(id) ? getCard(id).name : id);
+  if (p.zee) {
+    const left = 5 - (p.zee.minions % 5);
+    out.push({ text: `吉的力量：再打 ${left} 個手下`, title: '整場對戰中每打出第 5 個手下，它的戰吼會觸發兩次' });
+  }
+  for (const d of p.delayed ?? []) out.push({ text: `${d.turns} 回合後：${nameOf(d.sourceCardId)}`, title: '延遲的效果，時間到就會發動' });
+  const seen = new Set<string>();
+  for (const e of p.eternal ?? []) {
+    const key = `${e.sourceCardId}|${e.until ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ text: `${e.objective ? '目標' : '持續'}：${nameOf(e.sourceCardId)}`, title: e.objective ? '目標：在接下來的幾個回合內有效' : '本場對戰持續有效的效果' });
+  }
+  for (const d of p.pendingDiscounts ?? []) {
+    const what = [d.protoss ? '神族' : '', d.zerg ? '蟲族' : '', d.libram ? '聖契' : '', d.race ? ({ DEMON: '惡魔', DRAENEI: '德萊尼', BEAST: '野獸', DRAGON: '龍' } as Record<string, string>)[d.race] ?? '' : '', d.type === 'SPELL' ? '法術' : d.type === 'MINION' ? '手下' : d.type === 'WEAPON' ? '武器' : '', d.battlecry ? '戰吼' : '', d.combo ? '連擊' : ''].filter(Boolean).join('');
+    out.push({ text: `下一張${what || '牌'}${d.amount ? `消耗 -${d.amount}` : d.set !== undefined ? `消耗 ${d.set}` : ''}`, title: '你打出的下一張符合條件的牌' });
+  }
+  for (const fx of p.draeneiFx ?? []) {
+    const label = { buff: `+${fx.atk ?? 0}/${fx.hp ?? 0}${fx.kw?.length ? ' 與關鍵字' : ''}`, refresh: '恢復法力', attack: '立刻攻擊', heroAtk: '英雄獲得攻擊力', overload: '超載 (2)', copy: '召喚複製', bonus2: '兩個額外效果' }[fx.k];
+    out.push({ text: `下一個德萊尼：${label}`, title: '你打出的下一個德萊尼會獲得的效果' });
+  }
+  if (p.comboDouble) out.push({ text: '下一個連擊手下：連擊 ×2', title: '你打出的下一個連擊手下，連擊會觸發兩次' });
+  if (p.discoverNextTurn) out.push({ text: '下回合開始：發現一張法術', title: '下個回合開始時發現一張法術' });
+  if (p.libramDiscount) out.push({ text: `聖契 -${p.libramDiscount}`, title: '這場對戰中你的聖契消耗減少' });
+  if (p.nonStartDemonDiscount) out.push({ text: `非開局惡魔 -${p.nonStartDemonDiscount}`, title: '不是開局在牌堆中的惡魔，消耗減少' });
+  if (p.protossMinionDiscount) out.push({ text: `神族手下 -${p.protossMinionDiscount}`, title: '這場對戰中你的神族手下消耗減少' });
+  if (p.zergAtk) out.push({ text: `蟲族 +${p.zergAtk} 攻擊力`, title: '這場對戰中你的蟲族手下攻擊力提升' });
+  if (p.asteroidBonus) out.push({ text: `小行星 +${p.asteroidBonus} 傷害`, title: '這場對戰中你的小行星傷害提升' });
+  if (p.zergRushTurn !== undefined) out.push({ text: '蟲族：本回合突襲', title: '這個回合你的蟲族手下具有突襲' });
+  return out;
+}
+
+function StatusChips({ p }: { p: PlayerState }) {
+  const chips = statusChips(p);
+  if (!chips.length) return null;
+  return (
+    <div className="status-chips">
+      {chips.map((c, i) => (
+        <span key={i} className="status-chip" title={c.title}>
+          {c.text}
+        </span>
+      ))}
+    </div>
+  );
+}
