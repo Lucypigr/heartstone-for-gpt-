@@ -171,6 +171,7 @@ export function Collection() {
         </div>
 
         {message && <div className="message">{message}</div>}
+        {set !== '' && <p className="muted small">{setName(set)}卡庫共 {COLLECTIBLE.filter(c => c.set === set).length} 張（含未擁有）；目前篩選符合 {filtered.length} 張。</p>}
         <div className="card-grid">
           {pageCards.map((c) => {
             const owned = p.collection[c.id] ?? 0;
