@@ -11,6 +11,13 @@ export interface StarshipPiece {
 }
 
 export interface HandCard {
+  fortune?: boolean;
+  heldSpells?: string[];
+  heldSchools?: string[];
+  dial?: number[];
+  packed?: HandCard[];
+  enchantedMinion?: Minion;
+
   castWhenDrawn?: boolean;
   reflexesTurn?: number;
   ignis?: string[];
@@ -135,6 +142,9 @@ export interface HandCard {
 }
 
 export interface Minion {
+  attackObserved?: number;
+  generated?: boolean;
+  echoMinion?: Minion;
   kologarnCards?: number[];
   attackExcess?: boolean;
   tarTurn?: number;
@@ -246,6 +256,7 @@ export interface Hero {
 
 /** 地點牌：放在戰場上，每隔一個回合可以啟用一次，耐久度用完就消失 */
 export interface Location {
+  storedMinion?: Minion;
   uid: number;
   cardId: string;
   owner: PlayerId;
@@ -287,6 +298,21 @@ export interface SecretInst {
 }
 
 export interface PlayerState {
+  ownTurnHits?: number;
+  elementalStreak?: number;
+  spellsOnCharacters?: number;
+  lastEnemySpell?: string;
+  lastTurnCards?: string[];
+  eruptionDamage?: number;
+  nextDrawCast?: number;
+  nextSpellLifesteal?: boolean;
+  tideCostUntil?: number;
+  temporaryMana?: { turn: number; amount: number };
+  cleaveTurn?: number;
+  eudoraProgress?: number;
+
+  locationsUsed?: number;
+  castHistory?: string[];
   anomalyPowerPending?: boolean;
   spellSchools?: string[];
   secretsTriggered?: number;

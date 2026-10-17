@@ -72,6 +72,14 @@ export interface PackType {
 
 export const PACKS: PackType[] = [
   {
+    id: 'paradise',
+    name: '天堂島卡包',
+    description: '天堂島完整系列與旅行社迷你系列：遊客、飲料、地點與翻面傳單',
+    sets: [1905],
+    price: 100,
+    color: '#33aeb5',
+  },
+  {
     id: 'standard',
     name: '標準卡包',
     description: '目前標準模式的所有卡牌：核心、穿越時間流、浩劫與重生、逃離紫羅蘭堡、翡翠夢境、安戈洛失落之城',

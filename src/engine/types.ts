@@ -116,6 +116,7 @@ export type TargetExpr =
   | { t: 'it' };
 
 export type DynAmount =
+  | 'locationsUsed' | 'ownTurnHits' | 'elementalStreak' | 'spellsOnCharacters' | 'otherClassPlayed'
   | 'spellSchools' | 'secretsTriggered' | 'ownTurnDamage' | 'natureThisTurn' | 'treantsSummoned'
 
   | 'handSize'
@@ -290,6 +291,7 @@ export interface Pool {
 }
 
 export type Condition =
+  | { c: 'ownTurnDamage'; n: number }
   | { c: 'spellsCast'; n: number }
 
   | { c: 'corpses'; n: number }
@@ -604,6 +606,7 @@ export type Trig =
   | { k: 'attack'; subject: 'self' | 'friendlyHero' | 'friendlyMinion'; after?: boolean }
   | { k: 'heroPower'; side: Side }
   | { k: 'draw'; side: Side }
+  | { k: 'locationUsed'; side: Side }
   | { k: 'frenzy' }
   /** 星艦發射時（星艦組件的能力） */
   | { k: 'launch' }
@@ -771,6 +774,8 @@ export interface QuestDef {
 
 /** 你下一張符合條件的牌的消耗變化 */
 export interface PendingDiscount {
+  deathrattle?: boolean;
+  otherClass?: boolean;
   amount?: number;
   /** 消耗設為固定值 */
   set?: number;
@@ -850,6 +855,19 @@ export interface Runes {
 }
 
 export interface CardDef {
+  tourist?: CardClass;
+  chargeIfNotStarting?: boolean;
+  startsDormant?: number;
+  handTransformSchools?: boolean;
+  randomDial?: boolean;
+  temporaryInHand?: boolean;
+  unplayable?: boolean;
+  damageCap?: number;
+  minionDamageMultiplier?: number;
+  handStatGrow?: { atk: number; hp: number };
+
+  permanentlyFrozen?: boolean;
+  immuneToSpellpower?: boolean;
   /** 三個各能使用一次、取代攻擊的泰坦能力卡牌 ID。 */
   titan?: string[];
   titanAfter?: Effect[];

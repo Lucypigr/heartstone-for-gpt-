@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { cardClasses, COLLECTIBLE, getCard, HEROES, PLAYABLE_CLASSES } from '../../cards/registry';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardClass, CardDef, Rarity } from '../../engine/types';
-import { buildDeck, cardAllowed, deckCurve, deckRunes, DECK_SIZE, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
+import { buildDeck, cardAllowed, deckCurve, deckRunes, DECK_SIZE, touristClasses, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
 import { CRAFT_COST, DISENCHANT_VALUE, RARITY_NAMES } from '../../game/economy';
 import { decodeDeck, encodeDeck } from '../../game/deckstring';
 import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
@@ -37,7 +37,7 @@ export function Collection() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return COLLECTIBLE.filter((c) => {
-      if (editing && !cardAllowed(c, editing.heroClass, editing.freeform)) return false;
+      if (editing && !cardAllowed(c, editing.heroClass, editing.freeform, editing.cards)) return false;
       if (cls !== 'ALL' && !cardClasses(c).includes(cls)) return false;
       if (cost !== null && (cost >= 7 ? c.cost < 7 : c.cost !== cost)) return false;
       if (rarity && c.rarity !== rarity) return false;
@@ -82,7 +82,7 @@ export function Collection() {
   const classTabs: ClassFilter[] = editing
     ? editing.freeform
       ? ['ALL', ...PLAYABLE_CLASSES, 'NEUTRAL']
-      : ['ALL', editing.heroClass, 'NEUTRAL']
+      : ['ALL', editing.heroClass, ...touristClasses(editing.cards, editing.heroClass), 'NEUTRAL']
     : ['ALL', ...PLAYABLE_CLASSES, 'NEUTRAL'];
 
   return (
@@ -315,7 +315,7 @@ export function Collection() {
                   try {
                     const d = decodeDeck(importText);
                     const deck: Deck = { id: newId(), name: d.name ?? `匯入的${CLASS_NAMES[d.heroClass]}套牌`, heroClass: d.heroClass, freeform: false, cards: d.cards.slice(0, DECK_SIZE) };
-                    deck.freeform = deck.cards.some((id) => !cardAllowed(getCard(id), d.heroClass, false));
+                    deck.freeform = deck.cards.some((id) => !cardAllowed(getCard(id), d.heroClass, false, deck.cards));
                     const missing = countMissing(deck, p.collection);
                     setEditing(deck);
                     setImporting(false);
@@ -415,9 +415,9 @@ function DeckEditor({
     const pool: Record<string, number> = {};
     for (const [id, n] of Object.entries(remaining)) {
       const def = getCard(id);
-      if (n > 0 && cardAllowed(def, deck.heroClass, deck.freeform)) pool[id] = n;
+      if (n > 0 && cardAllowed(def, deck.heroClass, deck.freeform, deck.cards)) pool[id] = n;
     }
-    const extra = buildDeck(deck.heroClass, { seed: Date.now() % 100000, noise: 1, owned: pool, runes: deckRunes(deck.cards) }).filter((id) => {
+    const extra = buildDeck(deck.heroClass, { seed: Date.now() % 100000, noise: 1, owned: pool, cards: deck.cards, runes: deckRunes(deck.cards) }).filter((id) => {
       const def = getCard(id);
       return deck.cards.filter((x) => x === id).length < maxCopies(def);
     });
@@ -471,7 +471,7 @@ function DeckEditor({
         {grouped.map(({ def, n }) => (
           <li
             key={def.id}
-            className={`deck-card rarity-${def.rarity.toLowerCase()} ${cardAllowed(def, deck.heroClass, deck.freeform) ? '' : 'invalid'}`}
+            className={`deck-card rarity-${def.rarity.toLowerCase()} ${cardAllowed(def, deck.heroClass, deck.freeform, deck.cards) ? '' : 'invalid'}`}
             onClick={() => onRemove(def.id)}
             onContextMenu={(e) => {
               e.preventDefault();

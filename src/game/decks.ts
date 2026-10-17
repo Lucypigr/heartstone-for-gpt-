@@ -20,11 +20,22 @@ export function maxCopies(def: CardDef): number {
   return def.rarity === 'LEGENDARY' ? 1 : 2;
 }
 
-export function cardAllowed(def: CardDef, heroClass: HeroClass, freeform: boolean): boolean {
+export function cardAllowed(def: CardDef, heroClass: HeroClass, freeform: boolean, cards: string[] = []): boolean {
   if (!def.collectible) return false;
   if (freeform) return true;
   const classes = cardClasses(def);
-  return classes.includes('NEUTRAL') || classes.includes(heroClass);
+  if (classes.includes('NEUTRAL') || classes.includes(heroClass)) return true;
+  return def.set === 1905 && !def.tourist && touristClasses(cards, heroClass).some(c => classes.includes(c));
+}
+
+/** 只有本職業的旅客能開放目的職業，不可透過外職旅客繼續串接。 */
+export function touristClasses(cards: string[], heroClass: HeroClass): CardClass[] {
+  const result = new Set<CardClass>();
+  for (const id of cards) {
+    const c = getCard(id);
+    if (c.tourist && cardClasses(c).includes(heroClass)) result.add(c.tourist);
+  }
+  return [...result];
 }
 
 export const MAX_RUNES = 3;
@@ -77,7 +88,7 @@ export function validateDeck(deck: Deck, owned?: Record<string, number>): DeckPr
       continue;
     }
     if (n > maxCopies(def)) errors.push(`【${def.name}】最多只能放 ${maxCopies(def)} 張`);
-    if (!cardAllowed(def, deck.heroClass, deck.freeform)) errors.push(`【${def.name}】不屬於此職業`);
+    if (!cardAllowed(def, deck.heroClass, deck.freeform, deck.cards)) errors.push(`【${def.name}】不屬於此職業`);
     if (owned && (owned[id] ?? 0) < n) errors.push(`你沒有足夠的【${def.name}】`);
   }
   const runes = deckRunes(deck.cards);
@@ -227,6 +238,8 @@ export function cardQuality(def: CardDef): number {
 const CURVE: Record<number, number> = { 0: 1, 1: 4, 2: 6, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 2, 9: 1, 10: 1 };
 
 export interface BuildOptions {
+  /** 補牌時保留既有遊客開放的職業。 */
+  cards?: string[];
   seed: number;
   /** 0 = 完全依強度；越大越隨機 */
   noise: number;
@@ -251,7 +264,7 @@ export interface BuildOptions {
 export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
   const rng = { rng: opts.seed };
   const base = COLLECTIBLE.filter((c) => {
-    if (!cardAllowed(c, heroClass, false)) return false;
+    if (!cardAllowed(c, heroClass, false, opts.cards)) return false;
     if (opts.rarities && !opts.rarities.includes(c.rarity)) return false;
     if (opts.owned && !opts.owned[c.id]) return false;
     return true;

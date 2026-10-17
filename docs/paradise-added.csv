@@ -1,0 +1,150 @@
+﻿卡牌ID,繁體中文名稱,英文名稱,職業
+VAC_305,冰霜飾品,Frosty Décor,SHAMAN
+VAC_323,熔岩麥芽飲,Malted Magma,SHAMAN
+VAC_328,溶化元素,Meltemental,SHAMAN
+VAC_336,面具商人梅斯特拉,"Maestra, Mask Merchant",ROGUE
+VAC_338,肌肉杯杯,Cup o' Muscle,WARRIOR
+VAC_340,飢餓的哈姆,"Hamm, the Hungry",WARRIOR
+VAC_404,夜影花茶,Nightshade Tea,PRIEST
+VAC_413,巡邏員吉力,Ranger Gilly,HUNTER
+VAC_424,雕沙者瑞菈,"Raylla, Sand Sculptor",MAGE
+VAC_435,受困的大法師,Marooned Archmage,MAGE
+VAC_437,扣仔,Buttons,DEATHKNIGHT
+VAC_439,海濱巨人,Seaside Giant,NEUTRAL
+VAC_450,無憂無慮的餅乾,Carefree Cookie,SHAMAN
+VAC_461,飲料服務生,Drink Server,NEUTRAL
+VAC_520,海息酒杯,Seabreeze Chalice,MAGE
+VAC_916,神聖啤酒,Divine Brew,PALADIN
+VAC_951,「療癒」飲料,"""Health"" Drink",WARLOCK
+VAC_501,尋激者艾蘭娜,"Aranna, Thrill Seeker",DEMONHUNTER
+VAC_503,召喚師暗髓,Summoner Darkmarrow,WARLOCK
+VAC_507,浴日者萊妮莎,Sunsapper Lynessa,PALADIN
+VAC_518,托爾托旅人,Tortollan Traveler,DRUID
+VAC_519,維斯塔先生,Mistah Vistah,DRUID
+VAC_907,星夜沉眠,Sleep Under the Stars,DRUID
+VAC_949,全新高度,New Heights,DRUID
+VAC_950,攀岩夥伴,Bouldering Buddy,DRUID
+VAC_956,XB-931管家,XB-931 Housekeeper,NEUTRAL
+VAC_957,酷哥沃金,Chillin' Vol'jin,PRIEST
+WORK_013,亂流,Turbulus,SHAMAN
+WORK_017,銀月城傳單,Silvermoon Brochure,PRIEST
+WORK_025,食數豹,Number Cruncher,DRUID
+WORK_030,冰冠城塞傳單,Icecrown Brochure,SHAMAN
+WORK_041,忙碌苦工,Busy Peon,NEUTRAL
+WORK_050,安戈洛傳單,Un'Goro Brochure,DRUID
+WORK_063,傳送門法師斯凱拉,Portalmancer Skyla,MAGE
+VAC_301,華麗明星,Razzle-Dazzler,SHAMAN
+VAC_304,潮池幼生,Tidepool Pupil,NEUTRAL
+VAC_308,海妖之歌,Siren Song,SHAMAN
+VAC_321,因席狄斯,Incindius,NEUTRAL
+VAC_324,撞衫,Matching Outfits,SHAMAN
+VAC_329,天生好手,Natural Talent,SHAMAN
+VAC_332,海上騙子,Sea Shill,ROGUE
+VAC_333,陰險詐欺犯,Conniving Conman,ROGUE
+VAC_335,搜刮玩意,Petty Theft,ROGUE
+VAC_337,二廚,Line Cook,WARRIOR
+VAC_339,乳酪巨怪,Muensterosity,WARRIOR
+VAC_341,沒煮熟的魷魚,Undercooked Calamari,WARRIOR
+VAC_406,愛睏居民,Sleepy Resident,NEUTRAL
+VAC_407,多話鸚鵡,Chatty Macaw,HUNTER
+VAC_408,賞鳥,Birdwatching,HUNTER
+VAC_410,狂怒鳥禽,Furious Fowls,HUNTER
+VAC_414,火熱煤炭,Hot Coals,PRIEST
+VAC_415,大叫鳥,Sasquawk,HUNTER
+VAC_416,死亡翻滾,Death Roll,HUNTER
+VAC_417,剝奪感官,Sensory Deprivation,PRIEST
+VAC_418,三溫暖常客,Sauna Regular,PRIEST
+VAC_420,納里安‧柔想,Narain Soothfancy,PRIEST
+VAC_421,打盹的動物園管理員,Snoozin' Zookeeper,NEUTRAL
+VAC_423,暮光靈媒,Twilight Medium,PRIEST
+VAC_428,順流而下,Go with the Flow,MAGE
+VAC_431,海底世界,Under the Sea,MAGE
+VAC_432,度假村泊船工,Resort Valet,NEUTRAL
+VAC_438,旅行社專員,Travel Agent,NEUTRAL
+VAC_440,海關執法者,Customs Enforcer,NEUTRAL
+VAC_441,包裹處理員,Package Dealer,NEUTRAL
+VAC_442,點火員,Lamplighter,NEUTRAL
+VAC_443,衝浪章魚,Surfalopod,MAGE
+VAC_444,過度計劃者,Overplanner,NEUTRAL
+VAC_446,詹莉‧伊夏,A. F. Kay,NEUTRAL
+VAC_447,驚懼逃兵,Dread Deserter,NEUTRAL
+VAC_449,卡巴萊之星克蕾絲,"Carress, Cabaret Star",SHAMAN
+VAC_457,安心休息,Rest in Peace,PRIEST
+VAC_463,接待員,Concierge,NEUTRAL
+VAC_464,寶藏獵人尤多拉,Treasure Hunter Eudora,ROGUE
+VAC_508,什錦果仁,Trail Mix,DRUID
+VAC_509,海嘯,Tsunami,MAGE
+VAC_511,打瞌睡的龍,Dozing Dragon,DRUID
+VAC_512,腦部按摩師,Brain Masseuse,PRIEST
+VAC_521,笨手笨腳的門僮,Bumbling Bellhop,NEUTRAL
+VAC_524,浪潮之王,King Tide,MAGE
+VAC_525,黑麥斬斧,The Ryecleaver,WARRIOR
+VAC_526,炙燒,Char,WARRIOR
+VAC_527,龍族佳餚,Draconic Delicacy,WARRIOR
+VAC_528,吃到飽,All You Can Eat,WARRIOR
+VAC_529,做剪貼簿的學生,Scrapbooking Student,NEUTRAL
+VAC_531,灣鰭健美員,Bayfin Bodybuilder,NEUTRAL
+VAC_532,椰子砲手,Coconut Cannoneer,NEUTRAL
+VAC_533,食物大戰,Food Fight,WARRIOR
+VAC_558,船員之歌,Sea Shanty,PALADIN
+VAC_700,搶了就跑,Snatch and Grab,ROGUE
+VAC_701,黝黑擦刀手,Swarthy Swordshiner,ROGUE
+VAC_702,經理馬林,Marin the Manager,NEUTRAL
+VAC_917,燒烤專家,Grillmaster,PALADIN
+VAC_919,救生員,Lifeguard,PALADIN
+VAC_920,發球高手,Service Ace,PALADIN
+VAC_921,排球槌,Volley Maul,PALADIN
+VAC_922,救生光環,Lifesaving Aura,PALADIN
+VAC_923,沙灘魔堡,Sanc'Azel,PALADIN
+VAC_924,武器侍者,Weapons Attendant,NEUTRAL
+VAC_925,跳傘符印,Sigil of Skydiving,DEMONHUNTER
+VAC_926,跳崖運動,Cliff Dive,DEMONHUNTER
+VAC_927,腎上腺素惡魔,Adrenaline Fiend,DEMONHUNTER
+VAC_928,滑翔翼,Paraglide,DEMONHUNTER
+VAC_931,逼近死亡,Skirting Death,DEMONHUNTER
+VAC_932,登山鉤,Climbing Hook,DEMONHUNTER
+VAC_933,飛行員派奇,Patches the Pilot,DEMONHUNTER
+VAC_935,隨身腐肉蟲,Carry-On Grub,NEUTRAL
+VAC_936,八爪按摩師,Octo-masseuse,NEUTRAL
+VAC_938,猴人鬧事者,Hozen Roughhouser,NEUTRAL
+VAC_939,吃掉！那個！小鬼！,Eat! The! Imp!,WARLOCK
+VAC_941,投奔黑暗,Announce Darkness,WARLOCK
+VAC_942,無懼的火焰雜耍師,Fearless Flamejuggler,WARLOCK
+VAC_943,獻祭小鬼,Sacrificial Imp,WARLOCK
+VAC_944,受詛咒的紀念品,Cursed Souvenir,WARLOCK
+VAC_945,派對策劃員沃娜,Party Planner Vona,WARLOCK
+VAC_947,波浪池衝浪手,Wave Pool Thrasher,NEUTRAL
+VAC_948,補水站,Hydration Station,DRUID
+VAC_952,魔焰篝火,Felfire Bonfire,WARLOCK
+VAC_953,波浪高漲,Rising Waves,MAGE
+VAC_954,卡巴萊頭號舞者,Cabaret Headliner,SHAMAN
+VAC_955,戈貢佐姆,Gorgonzormu,NEUTRAL
+VAC_958,適應型聚合體,Adaptive Amalgam,NEUTRAL
+VAC_959,可靠商人格利夫塔,"Griftah, Trusted Vendor",NEUTRAL
+VAC_960,可靠的釣竿,Trusty Fishing Rod,HUNTER
+VAC_961,寵物鸚鵡,Pet Parrot,HUNTER
+WORK_001,信任遊戲,Trust Fall,PALADIN
+WORK_002,忙碌機器人,Busy-Bot,PALADIN
+WORK_004,旅行社諜戰,Agency Espionage,ROGUE
+WORK_006,撥號機器人,Robocaller,ROGUE
+WORK_007,最後期限,Deadline,WARLOCK
+WORK_008,附加條款,Fine Print,WARLOCK
+WORK_012,集合,Huddle Up,MAGE
+WORK_014,惡魔交易,Demonic Deal,DEMONHUNTER
+WORK_015,靈魂販子,Spirit Peddler,DEMONHUNTER
+WORK_018,工作馬,Workhorse,HUNTER
+WORK_019,搖錢牛,Cash Cow,HUNTER
+WORK_020,請到猴子,Monkey Business,HUNTER
+WORK_021,保留位,Reserved Spot,WARRIOR
+WORK_022,打卡,Punch Card,WARRIOR
+WORK_023,合金顧問,Alloy Advisor,WARRIOR
+WORK_024,熊搬,Handle with Bear,DRUID
+WORK_026,燃盡,Burndown,MAGE
+WORK_031,繁榮使者,Envoy of Prosperity,PRIEST
+WORK_032,見習魔影,Job Shadower,PRIEST
+WORK_040,笨拙管家,Clumsy Steward,NEUTRAL
+WORK_042,食肉隔間怪,Carnivorous Cubicle,NEUTRAL
+WORK_043,旅行管理員杜加爾,Travelmaster Dungar,NEUTRAL
+VAC_506,郵輪船長蘿菈,Cruise Captain Lora,DRUID
+VAC_523,藥劑混合師,Mixologist,NEUTRAL
+WORK_027,夢策者賽佛瑞斯,Dreamplanner Zephrys,NEUTRAL

@@ -137,7 +137,7 @@ export function App() {
         {screen === 'settings' && <Settings />}
       </main>
       <footer className="release-status">
-        泰坦卡庫 {COLLECTIBLE.filter(c => c.set === 1858).length} 張 · 全卡庫 {COLLECTIBLE.length} 張 · 版本 {import.meta.env.VITE_APP_VERSION ?? 'dev'}
+        天堂島卡庫 {COLLECTIBLE.filter(c => c.set === 1905).length} 張 · 泰坦 {COLLECTIBLE.filter(c => c.set === 1858).length} 張 · 全卡庫 {COLLECTIBLE.length} 張 · 版本 {import.meta.env.VITE_APP_VERSION ?? 'dev'}
         {' · '}<a href={`./play.html?update=${Date.now()}`}>重新載入最新版</a>
       </footer>
     </div>

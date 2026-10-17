@@ -15,6 +15,8 @@ import { DARK_OVERRIDES } from './dark';
 import { TIMEWAYS_OVERRIDES } from './timeways';
 import { FESTIVAL_OVERRIDES } from './festival';
 import { VIOLET_OVERRIDES } from './violet';
+import { PARADISE_REST_OVERRIDES } from './paradise-rest';
+import { PARADISE_OVERRIDES } from './paradise';
 import { TITANS_REST_OVERRIDES } from './titans-rest';
 import { TITANS_OVERRIDES } from './titans';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
@@ -2900,3 +2902,7 @@ Object.assign(OVERRIDES, DARK_OVERRIDES);
 Object.assign(OVERRIDES, TITANS_OVERRIDES);
 
 Object.assign(OVERRIDES, TITANS_REST_OVERRIDES);
+
+Object.assign(OVERRIDES, PARADISE_OVERRIDES);
+
+Object.assign(OVERRIDES, PARADISE_REST_OVERRIDES);
