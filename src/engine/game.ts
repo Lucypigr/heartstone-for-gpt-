@@ -3613,10 +3613,13 @@ export class Game {
     this.pulse(m.uid, m.cardId, m.owner, '亡語！');
     this.log(m.owner, `觸發了${this.name(m.cardId)}的亡語`);
     const dctx: Ctx = { ...this.baseCtx(m.owner), sourceUid: m.uid, sourceCardId: m.cardId, sourceSnapshot: m };
-    for (const ab of list ?? m.abilities) {
-      if (ab.on.k !== 'deathrattle' || (ab.cond && !this.evalCond(ab.cond, dctx))) continue;
-      yield* this.runEffects(ab.effects, dctx);
-      if (this.over) return;
+    const times = this.flagOnBoard('doubleDeathrattle', m.owner) ? 2 : 1;
+    for (let i = 0; i < times; i++) {
+      for (const ab of list ?? m.abilities) {
+        if (ab.on.k !== 'deathrattle' || (ab.cond && !this.evalCond(ab.cond, dctx))) continue;
+        yield* this.runEffects(ab.effects, dctx);
+        if (this.over) return;
+      }
     }
   }
 
@@ -4078,8 +4081,11 @@ export class Game {
     ctx.sourceUid = w.uid;
     ctx.sourceCardId = w.cardId;
     ctx.weapon = w;
-    for (const ab of w.abilities) {
-      if (ab.on.k === 'deathrattle') yield* this.runEffects(ab.effects, ctx);
+    const times = this.hasParadiseMinion(this.s.players[w.owner], 'VAC_503') ? 2 : 1;
+    for (let i = 0; i < times; i++) {
+      for (const ab of w.abilities) {
+        if (ab.on.k === 'deathrattle') yield* this.runEffects(ab.effects, ctx);
+      }
     }
     yield* this.emit({ k: 'weaponDestroyed', player: w.owner });
   }

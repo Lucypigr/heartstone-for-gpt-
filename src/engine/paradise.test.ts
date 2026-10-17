@@ -401,3 +401,21 @@ describe('天堂島特殊卡片互動', () => {
     expect(g.s.players[0].hand).toHaveLength(0);
   });
 });
+
+describe('暗髓的亡語範圍', () => {
+  it('也讓武器亡語觸發兩次', () => {
+    const g = game();
+    play(g, 'VAC_503');
+    play(g, 'VAC_330');
+    play(g, 'CS2_106');
+    expect(g.me.hand.filter(h => getCard(h.cardId).nameEn === 'The Coin')).toHaveLength(2);
+  });
+  it('手動觸發的手下亡語也執行兩次', () => {
+    const g = game();
+    play(g, 'VAC_503');
+    const m = put(g, 'WORK_018');
+    play(g, 'ICC_052', m.uid);
+    expect(g.me.board.filter(m => m.cardId === 'WORK_018t')).toHaveLength(4);
+    expect(g.me.board).toContain(m);
+  });
+});
