@@ -116,6 +116,8 @@ export type TargetExpr =
   | { t: 'it' };
 
 export type DynAmount =
+  | 'spellSchools' | 'secretsTriggered' | 'ownTurnDamage' | 'natureThisTurn' | 'treantsSummoned'
+
   | 'handSize'
   | 'friendlyMinions'
   | 'otherFriendlyMinions'
@@ -230,6 +232,9 @@ export type DynAmount =
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
 export interface Pool {
+  /** 泰坦不會被隨機產生，只有明確允許的效果例外。 */
+  allowTitans?: boolean;
+  magnetic?: boolean;
   type?: CardType;
   /** 巨型手下 */
   colossal?: boolean;
@@ -285,6 +290,9 @@ export interface Pool {
 }
 
 export type Condition =
+  | { c: 'spellsCast'; n: number }
+
+  | { c: 'corpses'; n: number }
   | { c: 'holding'; race?: Race; type?: CardType; minCost?: number; minAtk?: number }
   /** 你（side = enemy 時為對手）控制符合條件的其他手下 */
   | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean; hp?: number; frozen?: boolean }
@@ -616,7 +624,7 @@ export type Trig =
   /** 你裝備武器時 */
   | { k: 'equip'; side: Side }
   /** 此手下被攻擊後 */
-  | { k: 'attacked' }
+  | { k: 'attacked'; before?: boolean }
   /** 友方手下失去聖盾後 */
   | { k: 'shieldLost'; side: Side }
   /** 你的武器被摧毀時 */
@@ -676,7 +684,7 @@ export interface Aura {
    * friendlyHand：你手牌中的手下（例如「你手牌中的手下具有回音」）
    * firstSpellDiscount：你每回合的第一張法術消耗減少 cost
    */
-  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount' | 'self';
+  scope: 'otherFriendly' | 'adjacent' | 'leftFriendly' | 'rightFriendly' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount' | 'self';
   /** 隨某個數量變化的加成：atk / hp 乘以這個數量（例如「每棄掉一張牌 +2/+2」） */
   dyn?: { amount: DynAmount; atk?: number; hp?: number };
   cost?: number;
@@ -842,6 +850,13 @@ export interface Runes {
 }
 
 export interface CardDef {
+  /** 三個各能使用一次、取代攻擊的泰坦能力卡牌 ID。 */
+  titan?: string[];
+  titanAfter?: Effect[];
+  /** 永久物占戰場位置，但不算手下，也不會被一般死亡處理移除。 */
+  permanent?: boolean;
+  /** 花費 2 法力在手牌中升級。 */
+  forge?: { into: string; discount?: number };
   id: string;
   dbfId: number;
   name: string;
@@ -910,6 +925,7 @@ export interface CardDef {
   costsCorpses?: boolean;
   /** 抽到時施放（施放後再抽一張牌） */
   castsWhenDrawn?: boolean;
+  blossom?: { turns: number; into: string };
   /** 場上時的特殊規則 */
   flags?: MinionFlag[];
   /** 場上時影響手牌消耗的光環 */
@@ -931,9 +947,11 @@ export interface CardDef {
   /** 只有條件成立時才能攻擊 */
   attackIf?: Condition;
   /** 在手牌中時，每個你的回合開始時變形：swap = 換成 into；opponentCard = 對手手牌中的一張；randomSpell = 隨機一張 cls 法術 */
-  handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
+  handShift?: { kind: 'swap' | 'randomMinion' | 'opponentDeck' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
   /** 磁力：打出在友方機械左邊時，吸附到那個機械上 */
   magnetic?: boolean;
+  magneticBeasts?: boolean;
+  stealthOneTurn?: boolean;
   /** 在手牌中時，相鄰的牌消耗增加（破壞！） */
   adjacentCostUp?: number;
   /** 每個回合在手牌中時累積計數（升級） */
@@ -1029,6 +1047,9 @@ export interface CardDef {
  * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
+  | 'amitusDamageCap'
+  | 'meltedMaker'
+  | 'inventomatic'
   | 'noTurnDraw'
   | 'enemyNoHeal'
   | 'doubleCorpses'

@@ -11,6 +11,10 @@ export interface StarshipPiece {
 }
 
 export interface HandCard {
+  castWhenDrawn?: boolean;
+  reflexesTurn?: number;
+  ignis?: string[];
+  forgedCount?: number;
   uid: number;
   /** 注入：已累積的友方手下死亡次數 */
   infuseProgress?: number;
@@ -131,6 +135,15 @@ export interface HandCard {
 }
 
 export interface Minion {
+  kologarnCards?: number[];
+  attackExcess?: boolean;
+  tarTurn?: number;
+  statueDraws?: number;
+  titanUsed?: string[];
+  /** 薩格拉斯與其戰吼建立的永久傳送門。 */
+  titanPortal?: number;
+  portalBuff?: number;
+  magnetized?: string[];
   uid: number;
   cardId: string;
   owner: PlayerId;
@@ -249,6 +262,8 @@ export interface Location {
 }
 
 export interface Weapon {
+  ignis?: string[];
+  immuneAttacking?: boolean;
   uid: number;
   cardId: string;
   owner: PlayerId;
@@ -272,6 +287,31 @@ export interface SecretInst {
 }
 
 export interface PlayerState {
+  anomalyPowerPending?: boolean;
+  spellSchools?: string[];
+  secretsTriggered?: number;
+  ownTurnDamage?: number;
+  armorChangedTurn?: number;
+  summonedNames?: Record<string, number>;
+  nonStartingMinions?: string[];
+  hodirLeft?: number;
+  odynCount?: number;
+  chooseBothNext?: boolean;
+  schoolDiscounts?: { school: string; amount: number; turn: number }[];
+  inventorAuras?: number[];
+  jotunCount?: number;
+  jotunTurn?: number;
+  unendingPlagues?: boolean;
+  minionHealthCostTurn?: number;
+  conductivityTurn?: number;
+  celestialPower?: number;
+  activeCelestialPower?: number;
+  healingDealsDamage?: boolean;
+
+  forgedCards?: number;
+  primusSpellPower?: number;
+  activePrimusSpellPower?: number;
+  tendrilSpells?: number;
   id: PlayerId;
   name: string;
   heroClass: Exclude<CardClass, 'NEUTRAL'>;
@@ -669,6 +709,7 @@ export interface ChoiceRequest {
 }
 
 export interface GameState {
+  anomalies?: string[];
   players: [PlayerState, PlayerState];
   current: PlayerId;
   first: PlayerId;
@@ -688,6 +729,8 @@ export interface GameState {
 }
 
 export type Action =
+  | { type: 'forge'; handUid: number }
+  | { type: 'titan'; uid: number; ability: string; target?: number }
   /** side = 'enemy'：偽裝手下打在對手的戰場上 */
   | { type: 'play'; handUid: number; target?: number; position?: number; option?: number; side?: 'enemy' }
   /** 預備：把卡拖進牌堆，花光剩餘法力 */

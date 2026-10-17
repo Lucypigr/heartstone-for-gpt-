@@ -73,6 +73,7 @@ describe('能力發動的視覺回饋', () => {
 
 // 這些旗標是「持續生效的規則修改」，沒有「發動」的瞬間，不需要閃光
 const STATIC_FLAGS = new Set([
+  'amitusDamageCap',
   'heroPowerDamage', 'heroPowerUnlimited', 'heroPowerDrawsFree', 'heroPowerBuffsWeapon', 'heroPowerTwice', 'heroPowerCost1',
   'misdirect', 'bodyguard', 'doubleHealing', 'ignoreTaunt', 'weaponAbsorbs', 'heroWindfury', 'healthToMax', 'extraDamage',
   'minionImmuneAlone', 'enemyTaunt', 'randomTargets', 'heroImmune', 'doubleCorpses', 'atkEqualsHealth', 'gorehowl',
@@ -85,6 +86,7 @@ const STATIC_FLAGS = new Set([
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([
+  'meltedMaker', 'inventomatic',
   'lumia', 'anchorite', 'murmur', 'auchenai', 'talgath', 'rangari', 'mutalisk', 'harbinger', 'podling', 'orion',
   'stagSpirit', 'mirrorSpell', 'copyFrozen', 'natureFeeds', 'natureSummons', 'livingPlague', 'grazing',
 ]);

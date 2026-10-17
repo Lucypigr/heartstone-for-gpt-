@@ -18,9 +18,12 @@ import { Art, CardBack, CardView } from '../components/Card';
 import { RankBadge, RankPips } from '../components/Rank';
 import { direct, type Snap } from '../fx';
 import { clamp, useViewport } from '../hooks';
+import { ignisWeaponDef } from '../../cards/ignis';
 import { getProfile, setProfile, useProfile } from '../store';
 
 type Mode =
+  | { k: 'titanChoose'; uid: number }
+  | { k: 'titan'; uid: number; ability: string }
   | { k: 'idle' }
   | { k: 'card'; handUid: number; stage: 'select' | 'choose' | 'place' | 'target'; option?: number; position?: number; side?: 'enemy' }
   | { k: 'attack'; attacker: number }
@@ -295,6 +298,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'attack') return new Set(g.attackTargets(mode.attacker));
     if (mode.k === 'heroPower') return new Set(g.heroPowerTargets(mode.option));
     if (mode.k === 'heroPower2') return new Set(g.secondPowerTargets());
+    if (mode.k === 'titan') return new Set(g.titanTargets(mode.uid, mode.ability));
     if (mode.k === 'location') {
       const req = g.locationTargetReq(mode.uid);
       return req ? new Set(g.validTargets(req, ME, true)) : new Set<number>();
@@ -346,15 +350,21 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setInspect({ cardId: hc.cardId, def: g.liveDef(ME, hc) });
       return;
     }
-    setPrepPick(def.prepare || hc.canPrepare ? handUid : null);
+    setPrepPick(def.prepare || hc.canPrepare || def.forge ? handUid : null);
     if (mode.k === 'card' && mode.handUid === handUid && mode.stage === 'select') {
       act({ type: 'play', handUid });
       return;
     }
     const can = g.canPlay(handUid);
     if (!can.ok) {
+      if (def.forge && g.check({ type: 'forge', handUid }).ok) {
+        setInspect(null);
+        setMode({ k: 'idle' });
+        return;
+      }
       flash(can.reason ?? '無法打出');
-      if (!(def.prepare || hc.canPrepare)) setInspect({ cardId: hc.cardId });
+      if (!(def.prepare || hc.canPrepare || def.forge)) setInspect({ cardId: hc.cardId });
+      else setInspect(null);
       return;
     }
     setInspect(null);
@@ -592,6 +602,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'attack') act({ type: 'attack', attacker: mode.attacker, target: uid });
     else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid, option: mode.option });
     else if (mode.k === 'heroPower2') act({ type: 'heroPower2', target: uid });
+    else if (mode.k === 'titan') act({ type: 'titan', uid: mode.uid, ability: mode.ability, target: uid });
     else if (mode.k === 'location') act({ type: 'location', uid: mode.uid, target: uid });
     else if (mode.k === 'card') act({ type: 'play', handUid: mode.handUid, target: uid, option: mode.option, position: mode.position, side: mode.side });
   };
@@ -603,6 +614,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     }
     if (validTargets.has(c.uid)) {
       onTarget(c.uid);
+      return;
+    }
+    if (myTurn && mode.k === 'card' && mode.stage === 'place' && c.owner === ME && !isHero(c)) {
+      onPlace(me.board.indexOf(c));
+      return;
+    }
+    if (myTurn && c.owner === ME && !isHero(c) && !c.silenced && getCard(c.cardId).titan?.some((id) => !c.titanUsed?.includes(id))) {
+      setInspect(null);
+      setMode({ k: 'titanChoose', uid: c.uid });
       return;
     }
     if (myTurn && c.owner === ME && g.canAttack(c.uid)) {
@@ -691,6 +711,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const canTrade = selectedHand !== null && g.check({ type: 'trade', handUid: selectedHand }).ok;
   const prepHand = prepPick !== null ? me.hand.find((h) => h.uid === prepPick) : undefined;
   const canPrepare = myTurn && !!prepHand && g.check({ type: 'prepare', handUid: prepHand.uid }).ok;
+  const canForge = myTurn && !!prepHand && g.check({ type: 'forge', handUid: prepHand.uid }).ok;
   const selectedDef = selectedHand !== null ? getCard(me.hand.find((h) => h.uid === selectedHand)?.cardId ?? 'GAME_005') : null;
   const placing = mode.k === 'card' && mode.stage === 'place';
   // 偽裝手下可以打在對手的戰場上
@@ -699,6 +720,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const hint = (() => {
     if (s.phase === 'mulligan') return '';
     if (!myTurn) return s.pendingChoice ? '' : `${foe.name}的回合…`;
+    if (mode.k === 'titan') return '選擇泰坦能力的目標（Esc 取消）';
     if (mode.k === 'card') {
       const tip = selectedDef ? playHint(selectedDef) : '';
       const more = tip ? `　💡${tip}` : '';
@@ -715,7 +737,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const charClasses = (c: Minion | Hero) => {
     const cls: string[] = [];
     if (validTargets.has(c.uid) || aim?.set.has(c.uid)) cls.push('targetable');
-    if (myTurn && c.owner === ME && mode.k === 'idle' && g.canAttack(c.uid)) cls.push('can-attack');
+    if (myTurn && c.owner === ME && mode.k === 'idle' && (g.canAttack(c.uid) || (!isHero(c) && getCard(c.cardId).titan?.some((id) => g.canTitan(c.uid, id))))) cls.push('can-attack');
     if (mode.k === 'attack' && mode.attacker === c.uid) cls.push('attacking-selected');
     return cls.join(' ');
   };
@@ -735,7 +757,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   return (
     <div
       ref={battleRef}
-      className={`battle ${myTurn ? 'my-turn' : ''}`}
+      className={`battle ${myTurn ? 'my-turn' : ''} ${g.s.anomalies?.includes('TTN_002t35') ? 'golden-anomaly' : ''}`}
       style={{ '--mw': `${mw}px`, '--hw': `${hw}px`, '--cw': `${cw}px` } as CSSProperties}
       onPointerDown={onTargetDrag}
       onContextMenu={(e) => {
@@ -743,6 +765,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         setMode({ k: 'idle' });
       }}
     >
+      {!!g.s.anomalies?.length && <div className="anomaly-banner" title={g.s.anomalies.map(id => getCard(id).text.replace(/<[^>]+>/g, "")).join("\n")}>異常：{g.s.anomalies.map(id => getCard(id).name).join("、")}</div>}
       <div className="battle-topbar">
         <button className="btn small" onClick={() => setMenu(!menu)}>
           ☰ 選單
@@ -1014,6 +1037,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           </div>
         );
       })()}
+      {canForge && prepHand && (
+        <button className="btn trade-btn" onClick={() => act({ type: 'forge', handUid: prepHand.uid })}>
+          ⚒ 鍛造（2 法力：升級這張手牌）
+        </button>
+      )}
       {canPrepare && prepHand && (
         <button className="btn trade-btn prepare-btn" onClick={() => act({ type: 'prepare', handUid: prepHand.uid })}>
           🛠 預備（花光 {me.mana} 點法力，之後消耗減少 {me.mana + 1}）
@@ -1137,6 +1165,29 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </div>
       )}
 
+      {mode.k === 'titanChoose' && myTurn && (() => {
+        const m = g.minion(mode.uid);
+        if (!m) return null;
+        return <div className="modal"><div className="modal-box">
+          <h2>{getCard(m.cardId).name}：選擇泰坦能力</h2>
+          <p>每個能力只能使用一次；全部用完後才能一般攻擊。</p>
+          <div className="card-row">{(getCard(m.cardId).titan ?? []).map((id) => {
+            const ability = getCard(id);
+            const used = m.titanUsed?.includes(id);
+            const ok = g.canTitan(m.uid, id);
+            const power = 2 ** (m.titanUsed?.length ?? 0);
+            const text = ability.text.replace(/@/g, String(id === 'TTN_075t' ? power * 5 : power));
+            return <button key={id} className={`choose-option ${ok ? '' : 'disabled'}`} disabled={!ok} onClick={() => {
+              if (ability.target) setMode({ k: 'titan', uid: m.uid, ability: id });
+              else act({ type: 'titan', uid: m.uid, ability: id });
+            }}>
+              <b>{ability.name}</b><span dangerouslySetInnerHTML={{ __html: formatCardText(text) }} />
+              <small>{used ? '已使用' : ok ? '使用能力' : '目前無法使用'}</small>
+            </button>;
+          })}</div>
+          <button className="btn" onClick={() => setMode({ k: 'idle' })}>取消</button>
+        </div></div>;
+      })()}
       {s.pendingChoice && s.pendingChoice.player === ME && (
         <div className="modal">
           <div className="modal-box">
@@ -1288,6 +1339,7 @@ function MinionView({
       <div className={`minion-atk ${atkClass}`}>{atk}</div>
       <div className={`minion-hp ${hpClass}`}>{m.hp}</div>
       <div className="minion-icons">
+        {!m.silenced && def.titan && <span title="點選以使用泰坦能力">✦{def.titan.filter((id) => !m.titanUsed?.includes(id)).length}</span>}
         {hasDeathrattle && <span title="亡語">💀</span>}
         {hasTrigger && <span title="觸發 / 光環">⚡</span>}
         {kw('POISONOUS') && <span title="劇毒">🧪</span>}
@@ -1300,7 +1352,7 @@ function MinionView({
         {turnPending && <span title="這個回合會發動回合開始 / 結束的效果">⏳</span>}
         {kw('DORMANT') && m.dormantTurns !== undefined && <span title={`休眠中：還要 ${m.dormantTurns} 個回合甦醒`}>💤{m.dormantTurns}</span>}
       </div>
-      {m.sleeping && !kw('CHARGE') && m.owner === g.s.current && <div className="zzz">z z</div>}
+      {m.sleeping && !kw('CHARGE') && m.owner === g.s.current && !(!m.silenced && def.titan?.some((id) => g.canTitan(m.uid, id))) && <div className="zzz">z z</div>}
       {children}
     </div>
   );
@@ -1486,7 +1538,7 @@ function WeaponView({ p, g }: { p: PlayerState; g: Game }) {
   const w = p.weapon;
   if (!w) return <div className="weapon empty" />;
   return (
-    <div className="weapon" title={getCard(w.cardId).name}>
+    <div className="weapon" title={`${getCard(w.cardId).name}${w.ignis ? '\n' + formatCardText(ignisWeaponDef(w.cardId, w.ignis, getCard).text).replace(/<br>/g, '\n').replace(/<[^>]+>/g, '') : ''}`}>
       <Art cardId={w.cardId} />
       <span className="w-atk">{g.weaponAtk(p)}</span>
       <span className="w-dur">{w.durability}</span>

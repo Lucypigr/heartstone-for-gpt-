@@ -15,6 +15,8 @@ import { DARK_OVERRIDES } from './dark';
 import { TIMEWAYS_OVERRIDES } from './timeways';
 import { FESTIVAL_OVERRIDES } from './festival';
 import { VIOLET_OVERRIDES } from './violet';
+import { TITANS_REST_OVERRIDES } from './titans-rest';
+import { TITANS_OVERRIDES } from './titans';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -2895,3 +2897,6 @@ Object.assign(OVERRIDES, LOCATION_OVERRIDES);
 Object.assign(OVERRIDES, EVENT_OVERRIDES);
 Object.assign(OVERRIDES, DUNGEON_OVERRIDES);
 Object.assign(OVERRIDES, DARK_OVERRIDES);
+Object.assign(OVERRIDES, TITANS_OVERRIDES);
+
+Object.assign(OVERRIDES, TITANS_REST_OVERRIDES);

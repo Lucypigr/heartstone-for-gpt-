@@ -2,7 +2,7 @@
 // 用法：npm run cards
 // 會自動下載 HearthSim CardDefs.xml（快取於 .cache/），解析所有可收藏卡牌的英文敘述，
 // 只保留「效果能被引擎完整執行」的卡牌，並輸出繁體中文名稱 / 敘述。
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { loadCardDefsXml, parseCardDefs, type RawCard } from './carddefs';
 import { parseCardText, Unsupported, type ParseEnv, type ParsedCard, type TokenQuery } from '../src/cards/parser';
 import type { CardClass, CardDef, CardType, ChooseOneOption, Keyword, Race, Rarity } from '../src/engine/types';
@@ -80,7 +80,7 @@ const KEYWORD_TAGS: [string, Keyword][] = [
 /** 不收錄的系列：英雄造型、懷舊（與經典重複）、事件 */
 const EXCLUDED_SETS = new Set([17, 1646, 1941, 1994]);
 
-/** 引擎無法支援的機制（有這些標籤的卡一律略過） */
+/** 無法單靠文字解析的機制；有手動覆寫的卡仍可收錄。 */
 const UNSUPPORTED_TAGS = [
   'QUEST',
   'SIDE_QUEST',
@@ -120,6 +120,9 @@ function clean(s: string | undefined): string {
 }
 
 async function main() {
+  const setArg = process.argv.slice(2).find((arg) => arg.startsWith('--set='));
+  const selectedSet = setArg ? Number(setArg.slice(6)) : undefined;
+  if (selectedSet !== undefined && (!Number.isInteger(selectedSet) || selectedSet <= 0)) throw new Error('使用 --set=<系列數字 ID>');
   const xml = await loadCardDefsXml(CACHE);
   const raws = parseCardDefs(xml);
   console.log(`CardDefs.xml：共 ${raws.length} 筆實體`);
@@ -419,6 +422,7 @@ async function main() {
   const aliases: Record<number, string> = {};
   let groupsTotal = 0;
   for (const group of groups.values()) {
+    if (selectedSet !== undefined && !group.some((r) => r.tags.CARD_SET === selectedSet)) continue;
     groupsTotal++;
     group.sort((a, b) => pref(a) - pref(b) || a.dbf - b.dbf);
     for (const r of group) {
@@ -442,7 +446,7 @@ async function main() {
   // 各職業的星艦本體
   extra.push('GDB_100t2', 'GDB_100t4', 'GDB_100t5', 'GDB_100t6', 'GDB_100t7', 'GDB_100t8', 'GDB_100t9', 'SC_999t');
   extra.push(...DUNGEON_EXTRA_IDS);
-  for (const id of extra) {
+  for (const id of selectedSet === undefined ? extra : []) {
     const def = buildToken(id);
     if (!def) throw new Error(`必要衍生卡 ${id} 解析失敗`);
   }
@@ -468,7 +472,7 @@ async function main() {
 
   // 基本職業以外的英雄能力：名稱、敘述與消耗（效果定義在 src/engine/heroes.ts）
   const powers: Record<string, { id: string; name: string; text: string; cost: number }> = {};
-  for (const id of Object.keys(EXTRA_POWERS)) {
+  for (const id of Object.keys(EXTRA_POWERS).filter(id => selectedSet === undefined || byId.get(id)?.tags.CARD_SET === selectedSet)) {
     const bp = byId.get(id);
     if (!bp?.strs.CARDNAME?.zhTW) throw new Error(`英雄能力 ${id} 不存在`);
     powers[id] = { id, name: clean(bp.strs.CARDNAME.zhTW), text: clean(bp.strs.CARDTEXT?.zhTW), cost: bp.tags.COST ?? 0 };
@@ -491,10 +495,45 @@ async function main() {
 
   // ------------------------------------------------------------------ 輸出
   mkdirSync('src/data', { recursive: true });
-  writeFileSync(OUT, JSON.stringify({ build: /build="(\d+)"/.exec(xml)?.[1], heroes, powers, heroSkins, aliases, cards: all }));
+  const build = /build="(\d+)"/.exec(xml)?.[1];
+  if (setArg) {
+    const set = Number(setArg.slice(6));
+    if (!Number.isInteger(set) || set <= 0) throw new Error('使用 --set=<系列數字 ID>');
+    // 局部更新：保留其他系列與既有版本，僅加入本系列及所需的衍生卡。
+    const previous = JSON.parse(readFileSync(OUT, 'utf8'));
+    const generated = new Map(all.map((c) => [c.id, c]));
+    const selected = new Map<string, CardDef>();
+    const visit = (id: string) => {
+      if (selected.has(id)) return;
+      const c = generated.get(id);
+      if (!c) return;
+      selected.set(id, c);
+      const refs = (value: unknown): void => {
+        if (typeof value === 'string' && value !== id && generated.has(value)) visit(value);
+        else if (Array.isArray(value)) value.forEach(refs);
+        else if (value && typeof value === 'object') Object.values(value).forEach(refs);
+      };
+      refs(c);
+      refs(OVERRIDES[id]?.tokens);
+    };
+    for (const c of all) if (c.set === set && c.collectible) visit(c.id);
+    if (![...selected.values()].some((c) => c.collectible)) throw new Error(`系列 ${set} 沒有可產生的卡牌`);
+    const merged = new Map<string, CardDef>(previous.cards.map((c: CardDef) => [c.id, c]));
+    for (const [id, c] of selected) {
+      // 其他系列的既有共用衍生卡不隨這次更新改版。
+      if (c.set === set || !merged.has(id)) merged.set(id, c);
+    }
+    const mergedAliases = { ...previous.aliases };
+    for (const [id, target] of Object.entries(aliases)) if (selected.has(target)) mergedAliases[id] = target;
+    writeFileSync(OUT, JSON.stringify({ ...previous, setBuilds: { ...previous.setBuilds, [set]: build }, powers: { ...previous.powers, ...powers }, aliases: mergedAliases, cards: [...merged.values()] }));
+    console.log(`局部更新系列 ${set}（來源 ${build}），收錄 ${[...merged.values()].filter((c) => c.set === set && c.collectible).length} 張可收藏卡`);
+  } else {
+    writeFileSync(OUT, JSON.stringify({ build, heroes, powers, heroSkins, aliases, cards: all }));
+  }
 
   const bySet = new Map<number, { ok: number; total: number }>();
   for (const group of groups.values()) {
+    if (selectedSet !== undefined && !group.some((r) => r.tags.CARD_SET === selectedSet)) continue;
     const s = group[0].tags.CARD_SET;
     if (!bySet.has(s)) bySet.set(s, { ok: 0, total: 0 });
     bySet.get(s)!.total++;

@@ -14,9 +14,10 @@ const terms = GLOSSARY.flatMap((g) => [g.term, ...(g.words ?? [])]).concat(['死
 terms.sort((a, b) => b.length - a.length);
 
 function leftover(chunk: string): string {
-  let s = chunk.replace(/[：:、，,。及和與\s()（）\d+@{}\/~！!]/g, '');
+  // 先比對完整術語，再移除數字，保留 T1T4N 這類機制名稱。
+  let s = chunk.replace(/[：:、，,。及和與\s()（）+@{}\/~！!]/g, '');
   for (const t of terms) s = s.split(t).join('');
-  return s;
+  return s.replace(/\d/g, '');
 }
 
 describe('機制說明', () => {

@@ -55,6 +55,7 @@ export const UPGRADED_POWER_IDS: Record<Exclude<CardClass, 'NEUTRAL'>, string> =
  * 『炎魔』拉格納羅斯的死吧，蟲子！。名稱與敘述由卡牌資料提供（cards.json 的 powers）。
  */
 export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
+  TTN_717t: { effects: [{ e: 'custom', fn: 'ttnRestAlgalon' }] },
   HERO_01bp2: { effects: [{ e: 'armor', amount: 4 }] },
   HERO_02bp2: { effects: [{ e: 'custom', fn: 'totemicSlam' }], needsBoardSpace: true },
   HERO_03bp2: { effects: [{ e: 'equip', card: 'AT_132_ROGUEt' }] },

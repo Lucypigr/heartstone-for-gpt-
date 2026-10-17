@@ -16,7 +16,8 @@ export function legalActions(g: Game): Action[] {
   const p = s.players[s.current];
   const out: Action[] = [];
   for (const hc of p.hand) {
-    const def = getCard(hc.cardId);
+    const def = g.handDef(hc);
+    if (def.forge && g.check({ type: 'forge', handUid: hc.uid }).ok) out.push({ type: 'forge', handUid: hc.uid });
     const options = def.chooseOne ? def.chooseOne.map((_o, i) => i) : [undefined];
     for (const option of options) {
       if (!g.canPlay(hc.uid, option).ok) continue;
@@ -52,6 +53,13 @@ export function legalActions(g: Game): Action[] {
     if (req && targets.length) {
       for (const t of targets) if (g.check({ type: 'location', uid: l.uid, target: t }).ok) out.push({ type: 'location', uid: l.uid, target: t });
     } else if (g.check({ type: 'location', uid: l.uid }).ok) out.push({ type: 'location', uid: l.uid });
+  }
+  for (const m of p.board) {
+    for (const ability of getCard(m.cardId).titan ?? []) {
+      if (!g.canTitan(m.uid, ability)) continue;
+      if (getCard(ability).target) for (const target of g.titanTargets(m.uid, ability)) out.push({ type: 'titan', uid: m.uid, ability, target });
+      else out.push({ type: 'titan', uid: m.uid, ability });
+    }
   }
   for (const c of [p.hero, ...p.board]) {
     if (!g.canAttack(c.uid)) continue;
@@ -117,6 +125,8 @@ export function evaluate(g: Game, me: PlayerId, w: EvalWeights = DEFAULT_WEIGHTS
   // 回音的複製回合結束就會消失，不算手牌優勢
   const handSize = (p: typeof a) => p.hand.filter((h) => !h.echo).length;
   score += Math.min(handSize(a), 8) * 1.6 - Math.min(handSize(b), 8) * 0.8;
+  const forged = (p: typeof a) => p.hand.reduce((n, h) => n + Math.min(4, h.forgedCount ?? 0) * 1.5, 0);
+  score += forged(a) - forged(b) * 0.5;
   if (a.weapon) score += a.weapon.atk * Math.min(a.weapon.durability, 3) * 0.6;
   if (b.weapon) score -= b.weapon.atk * Math.min(b.weapon.durability, 3) * 0.6;
   score += a.secrets.length * 2 - b.secrets.length * 2;

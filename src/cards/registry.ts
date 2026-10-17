@@ -84,6 +84,7 @@ export const isStandardCard = (c: CardDef): boolean => STANDARD_SETS.has(c.set) 
 
 export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass): CardDef[] {
   return COLLECTIBLE.filter((c) => {
+    if (pool.magnetic && !c.magnetic) return false;
     if (pool.type && c.type !== pool.type) return false;
     if (pool.race && !(c.races?.includes(pool.race) || c.races?.includes('ALL'))) return false;
     if (pool.cost !== undefined && c.cost !== pool.cost) return false;

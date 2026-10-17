@@ -3441,3 +3441,6 @@ body {
 .status-chip:hover {
   background: #3d3220;
 }
+
+.anomaly-banner { text-align: center; padding: 4px 10px; color: #ddc0ff; background: #24172e; font-size: 12px; }
+.golden-anomaly .card { box-shadow: 0 0 0 2px #d9ac48, 0 0 12px #bf8a3944; }
