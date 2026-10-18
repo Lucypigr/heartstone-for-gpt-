@@ -2,6 +2,7 @@
 import data from '../data/cards.json';
 import type { CardClass, CardDef, Pool } from '../engine/types';
 import { CUSTOM_CARDS } from './custom';
+import { WORKSHOP_CARDS } from './workshop';
 import { OVERRIDES } from './overrides';
 
 export interface HeroInfo {
@@ -33,6 +34,8 @@ for (const [id, patch] of Object.entries(OVERRIDES)) {
   CARDS[id] = { ...base, ...rest, heroPower: heroPower && base.heroPower ? { ...base.heroPower, ...heroPower } : base.heroPower };
 }
 for (const c of CUSTOM_CARDS) CARDS[c.id] = { ...c, custom: true };
+// 補齊尚未由 cards.json 產生的官方卡與衍生卡，不覆寫已生成的版本。
+for (const c of WORKSHOP_CARDS) if (!CARDS[c.id]) CARDS[c.id] = c;
 
 /** 所有卡（含不可收藏的衍生卡） */
 export const ALL_CARDS = (): CardDef[] => Object.values(CARDS);
