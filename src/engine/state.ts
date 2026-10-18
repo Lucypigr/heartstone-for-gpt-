@@ -436,6 +436,8 @@ export interface PlayerState {
   hand: HandCard[];
   board: Minion[];
   secrets: SecretInst[];
+  /** 觀察者之謎：暫時奧秘的 UID，下回合開始時移除。 */
+  workshopSecretsToExpire?: number[];
   /** 場上的地點牌 */
   locations?: Location[];
   graveyard: string[];
