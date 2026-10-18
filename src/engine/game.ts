@@ -2050,6 +2050,11 @@ export class Game {
       return;
     }
     const p = s.players[pid];
+    if (p.workshopSecretsToExpire?.length) {
+      const ids = new Set(p.workshopSecretsToExpire);
+      p.secrets = p.secrets.filter((sec) => !ids.has(sec.uid));
+      p.workshopSecretsToExpire = [];
+    }
     if (p.temporaryMana && p.temporaryMana.turn < s.turn) { p.maxMana = Math.max(0,p.maxMana-p.temporaryMana.amount); p.temporaryMana = undefined; }
     p.maxMana = Math.min(this.manaCap(p), p.maxMana + 1);
     if (p.temporaryMana?.turn === s.turn) { p.temporaryMana.amount = Math.max(0,Math.min(p.temporaryMana.amount,this.manaCap(p)-p.maxMana)); p.maxMana += p.temporaryMana.amount; }
@@ -7447,6 +7452,20 @@ export class Game {
       case 'SetHero15':
         me.hero.hp = Math.min(15, me.hero.maxHp);
         break;
+      case 'RockPaperScissors': {
+        const choices = ['MIS_916a', 'MIS_916b', 'MIS_916c'];
+        // 石頭=0、布=1、剪刀=2；三選一，平手重賽。
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const a = yield* this.chooseAs(me.id, choices, '你要出石頭、布還是剪刀？');
+          const b = yield* this.chooseAs(foe.id, choices, '對手要出石頭、布還是剪刀？');
+          if (a === b) continue;
+          const winner = (a - b + 3) % 3 === 1 ? me : foe;
+          this.log(winner.id, '猜拳獲勝，抽兩張牌！');
+          yield* this.draw(winner, 2);
+          break;
+        }
+        break;
+      }
       case 'DiscoverCheapSecret': {
         const id = yield* choose({ isSecret: true }, '發現一張奧秘');
         if (!id) break;
@@ -7590,6 +7609,18 @@ export class Game {
       case 'Botface': {
         const minis = COLLECTIBLE.map((c) => c.miniaturize).filter((id): id is string => !!id && hasCard(id));
         for (let i=0;i<2;i++) { const id=pick(this.s,minis); if(id) add(id); }
+        break;
+      }
+      case 'ObserverSecrets': {
+        const pool = this.randomPool({ isSecret: true }, me.id, true);
+        for (let i = 0; i < 2 && me.secrets.length < MAX_SECRETS; i++) {
+          const candidates = pool.filter((c) => !me.secrets.some((sec) => getCard(sec.cardId).nameEn === c.nameEn));
+          const chosen = pick(this.s, candidates);
+          if (!chosen) break;
+          const sec = { uid: this.uid(), cardId: chosen.id };
+          me.secrets.push(sec);
+          (me.workshopSecretsToExpire ??= []).push(sec.uid);
+        }
         break;
       }
       case 'SketchArtist': {
