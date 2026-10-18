@@ -32,7 +32,7 @@ export const WORKSHOP_REST_OVERRIDES: Record<string, Override> = {
   TOY_371: { abilities: play(fn('ManufacturingError')) },
   TOY_374: { abilities: play(fn('SpotDifference')) },
   TOY_375: { target: { filter: { type: 'minion', side: 'enemy' } }, abilities: play(fn('FreezeArmor')) },
-  TOY_377: { target: { filter: { type: 'character', side: 'any' } }, abilities: play(fn('FrostCrossStitch')), tokens: ['TOY_377t'] },
+  TOY_377: { target: { filter: { type: 'character', side: 'any' } }, abilities: play(fn('FrostCrossStitch')) },
   TOY_380: { keywords: ['TAUNT'], abilities: death({ e: 'summon', card: 'TOY_380t2', count: 1, who: 'self' }),
     tokens: ['TOY_380t2'] },
   TOY_382: { abilities: death({ e: 'addCard', card: 'TOY_382t', count: 2, who: 'self' }), tokens: ['TOY_382t'] },
