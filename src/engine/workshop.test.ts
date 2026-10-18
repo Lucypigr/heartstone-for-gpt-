@@ -26,6 +26,14 @@ function play(g: Game, id: string) {
   expect(g.apply({ type: 'play', handUid: hc.uid }), id).toBe(true);
 }
 
+/** 打出真正生成在手牌裡的版本，不額外塞入同名測試卡。 */
+function playGenerated(g: Game, id: string) {
+  const hc = g.me.hand.find((h) => h.cardId === id);
+  expect(hc, id).toBeDefined();
+  g.me.mana = 10;
+  expect(g.apply({ type: 'play', handUid: hc!.uid }), id).toBe(true);
+}
+
 describe('威茲邦的工作坊：微縮與巨大化', () => {
   it('4 張正式卡可收藏，衍生版本不可收藏，官方 ID 不重複', () => {
     const originals = ['TOY_811', 'TOY_340', 'TOY_307', 'MIS_300'];
@@ -53,7 +61,7 @@ describe('威茲邦的工作坊：微縮與巨大化', () => {
     const mini = getCard('TOY_811t');
     expect([mini.cost, mini.attack, mini.health]).toEqual([1, 1, 1]);
     expect(mini.keywords).toEqual(expect.arrayContaining(['RUSH', 'LIFESTEAL', 'DIVINE_SHIELD']));
-    play(g, 'TOY_811t');
+    playGenerated(g, 'TOY_811t');
     expect(g.me.hand.some((h) => h.cardId === 'TOY_811t')).toBe(false);
     expect(g.me.board.filter((m) => m.cardId === 'TOY_811t')).toHaveLength(1);
   });
@@ -65,7 +73,7 @@ describe('威茲邦的工作坊：微縮與巨大化', () => {
     const giant = getCard('MIS_300t');
     expect([giant.cost, giant.attack, giant.health]).toEqual([8, 8, 8]);
     expect(giant.keywords).toEqual(expect.arrayContaining(['ELUSIVE', 'LIFESTEAL', 'TAUNT']));
-    play(g, 'MIS_300t');
+    playGenerated(g, 'MIS_300t');
     expect(g.me.hand.filter((h) => h.cardId === 'MIS_300t')).toHaveLength(0);
   });
 
@@ -101,7 +109,7 @@ describe('威茲邦的工作坊：微縮與巨大化', () => {
     expect(g.me.hand.some((h) => h.cardId === 'TOY_307t')).toBe(true);
     expect(generated).toHaveLength(2);
     expect(generated.every((h) => getCard(h.cardId).spellSchool === 'FROST')).toBe(true);
-    play(g, 'TOY_307t');
+    playGenerated(g, 'TOY_307t');
     expect(g.me.hand.filter((h) => h.temporary)).toHaveLength(4);
     expect(g.me.hand.some((h) => h.cardId === 'TOY_307t')).toBe(false);
     expect(g.apply({ type: 'endTurn' })).toBe(true);
