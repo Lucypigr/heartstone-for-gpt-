@@ -11,6 +11,23 @@ const allFriends = { t: 'all' as const, filter: { type: 'minion' as const, side:
 const enemy = { t: 'random' as const, filter: { type: 'character' as const, side: 'enemy' as const }, count: 1 };
 
 export const WORKSHOP_REST_OVERRIDES: Record<string, Override> = {
+  MIS_026: { abilities: [{ on: { k: 'draw', side: 'friendly' }, effects: [fn('Dorian')] }] },
+  MIS_911: { abilities: [{ on: { k: 'attack', subject: 'friendlyHero', after: true },
+    effects: [{ e: 'summon', card: 'MIS_911', count: 1, who: 'self' }] }] },
+  TOY_000: { keywords: ['TAUNT'], atkIf: { cond: { c: 'opponentTurn' }, atk: 2 } },
+  TOY_381: { flags: ['heroPowerAlwaysFree' as any] },
+  TOY_529: { abilities: play(fn('Wheel')) },
+  TOY_851: { abilities: play(fn('ToyChest')) },
+  TOY_884: { abilities: play(fn('CraneGame')) },
+  TOY_886: { abilities: play(fn('Endgame')) },
+  TOY_894: { target: { filter: { type: 'minion', side: 'any', excludeSelf: true } },
+    keywords: ['RUSH'], abilities: play(fn('OrigamiAttack')) },
+  TOY_895: { target: { filter: { type: 'minion', side: 'any', excludeSelf: true } },
+    keywords: ['TAUNT'], abilities: play(fn('OrigamiHealth')) },
+  TOY_896: { target: { filter: { type: 'minion', side: 'any', excludeSelf: true } },
+    keywords: ['DIVINE_SHIELD', 'LIFESTEAL'], abilities: play(fn('OrigamiStats')) },
+  TOY_897: { abilities: death(fn('Hydra')) },
+  TOY_960: { abilities: play(fn('Jepetto')) },
   // 迷你系列：能以既有 DSL 正確執行的卡
   MIS_104: { abilities: play({ e: 'addRandom', pool: { type: 'MINION', race: 'BEAST' }, count: 5, who: 'self', temporary: true }) },
   MIS_107: { abilities: play({ e: 'cond', cond: { c: 'deckNoMinions' },
