@@ -570,6 +570,22 @@ async function main() {
     writeFileSync(OUT, JSON.stringify({ build, heroes, powers, heroSkins, aliases, cards: all }));
   }
 
+  // 產出工作坊來源稽核（僅在明確更新這個系列時）：保留官方 ID/DBF/繁中敘述，
+  // 讓補卡能參考準確來源，而不是依賴猜測或用無效果卡片灌水。
+  if (selectedSet === 1897) {
+    const source = raws.filter((r) => r.tags.CARD_SET === 1897 && (r.tags.COLLECTIBLE || r.tags.MINI || r.tags.GIGANTIC))
+      .map((r) => ({ id: r.id, dbfId: r.dbf, name: clean(r.strs.CARDNAME?.zhTW),
+        nameEn: clean(r.strs.CARDNAME?.enUS), text: clean(r.strs.CARDTEXT?.zhTW),
+        textEn: clean(r.strs.CARDTEXT?.enUS), collectible: !!r.tags.COLLECTIBLE,
+        mini: !!r.tags.MINI, gigantic: !!r.tags.GIGANTIC,
+        relatedDbf: r.tags.COLLECTION_RELATED_CARD_DATABASE_ID ?? null,
+        cost: r.tags.COST, attack: r.tags.ATK, health: r.tags.HEALTH,
+        rarity: r.tags.RARITY, type: r.tags.CARDTYPE, cardClass: r.tags.CLASS, tags: r.tags,
+      }));
+    writeFileSync('docs/workshop-source.json', JSON.stringify({ build, source }));
+    writeFileSync('docs/workshop-unimplemented.json', JSON.stringify({ build,
+      failures: failures.filter((f) => f.set === 1897) }));
+  }
   const bySet = new Map<number, { ok: number; total: number }>();
   for (const group of groups.values()) {
     if (selectedSet !== undefined && !group.some((r) => r.tags.CARD_SET === selectedSet)) continue;
