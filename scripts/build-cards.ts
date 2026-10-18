@@ -9,10 +9,10 @@ import type { CardClass, CardDef, CardType, ChooseOneOption, Keyword, Race, Rari
 import { OVERRIDES as BASE_OVERRIDES } from '../src/cards/overrides';
 import { WORKSHOP_CARDS } from '../src/cards/workshop';
 // 保留現有完整手動定義（含微型與巨型）；產卡器只新增能驗證的缺卡。
-const OVERRIDES: Record<string, Partial<CardDef> & { tokens?: string[] }> = {
+const OVERRIDES = {
   ...BASE_OVERRIDES,
   ...Object.fromEntries(WORKSHOP_CARDS.map(({ id, ...card }) => [id, card])),
-};
+} as typeof BASE_OVERRIDES;
 import { EXTRA_POWERS } from '../src/engine/heroes';
 import { DUNGEON_EXTRA_IDS } from '../src/cards/dungeon';
 
