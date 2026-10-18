@@ -2635,6 +2635,19 @@ export class Game {
     if (echo && p.hand.length < MAX_HAND) p.hand.push({ ...structuredClone(hc), uid: this.uid(), echo: true });
     // 雙生法術：把一張沒有雙生法術的複製加入手牌
     if (def.twinspellCopy && p.hand.length < MAX_HAND) p.hand.push(this.newHandCard(def.twinspellCopy));
+    // 威茲邦：打出原版時，將微型 (1/1/1) 或巨型 (8/8/8) 版本加入原本的手牌位置。
+    // 衍生卡本身不帶 miniaturize / gigantify 欄位，因此不能無限生成。
+    const workshopCopy = def.miniaturize ?? def.gigantify;
+    if (workshopCopy && hasCard(workshopCopy)) {
+      const generated = this.addToHand(p, workshopCopy);
+      if (generated) {
+        const addedAt = p.hand.findIndex((h) => h.uid === generated.uid);
+        if (addedAt >= 0) {
+          p.hand.splice(addedAt, 1);
+          p.hand.splice(Math.min(idx, p.hand.length), 0, generated);
+        }
+      }
+    }
     p.cardsPlayedThisTurn++;
     p.nextCardDiscount = 0;
     if (fromOpp) this.accusationFire('theft', p.id);
@@ -5422,6 +5435,7 @@ export class Game {
           const c = pick(s, cards);
           if (!c) break;
           const hc = this.addToHand(who(e.who), c.id);
+          if (hc && e.temporary) hc.temporary = true;
           if (hc && e.who === 'self') ctx.it = { kind: 'hand', uid: hc.uid };
         }
         break;
