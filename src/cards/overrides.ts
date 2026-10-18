@@ -19,6 +19,7 @@ import { PARADISE_REST_OVERRIDES } from './paradise-rest';
 import { PARADISE_OVERRIDES } from './paradise';
 import { TITANS_REST_OVERRIDES } from './titans-rest';
 import { TITANS_OVERRIDES } from './titans';
+import { WORKSHOP_REST_OVERRIDES } from './workshop-rest';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -75,6 +76,7 @@ const stealthOneTurn: Effect = { e: 'buff', target: { t: 'self' }, keywords: ['S
 const swapEachTurn = (into: string, rest: Override = {}): Override => ({ ...rest, handShift: { kind: 'swap', into } });
 
 export const OVERRIDES: Record<string, Override> = {
+  ...WORKSHOP_REST_OVERRIDES,
   // 動物夥伴：隨機召喚米莎、雷歐克或霍弗
   NEW1_031: {
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'summonOneOf', args: { cards: ['NEW1_032', 'NEW1_033', 'NEW1_034'] } }] }],
