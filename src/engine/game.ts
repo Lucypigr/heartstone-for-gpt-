@@ -3603,6 +3603,7 @@ export class Game {
       drawn.push(card);
       if (this.splitShatter(p, card)) yield* this.emit({ k: 'shatter', player: p.id });
       p.drawnThisTurn++;
+      p.cardsDrawnThisGame = (p.cardsDrawnThisGame ?? 0) + 1;
       if (p.jotunCount && p.jotunTurn !== this.s.turn && getCard(card.cardId).type === 'SPELL') { p.jotunTurn = this.s.turn; for (let j = 0; j < p.jotunCount; j++) yield* this.castRandomly(p.id, card.cardId, true); }
       this.questProgress(p, 'draw');
       if (this.isOtherClass(p, card.cardId)) {
@@ -4640,6 +4641,8 @@ export class Game {
         return p.heroPowersUsed;
       case 'drawnThisTurn':
         return p.drawnThisTurn;
+      case 'cardsDrawnThisGame':
+        return p.cardsDrawnThisGame ?? 0;
       case 'spellsInHand':
         return p.hand.filter((h) => getCard(h.cardId).type === 'SPELL').length;
       case 'damagedMinions':
