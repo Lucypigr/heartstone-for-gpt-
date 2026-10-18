@@ -81,7 +81,7 @@ const STATIC_FLAGS = new Set([
   'footman', 'awakenOnPower', 'spellDamage2Damaged', 'keepBothRewinds', 'fireImmune', 'noAttackDamaged', 'heroPowerDouble',
   'heroPowerTargetMinions', 'allMisdirect', 'unlimitedAttacks', 'heroImmuneOnTurn', 'enemyNoHeal', 'bothSpellDamage2',
   'doubleHeroDamage', 'heroDamageCap1', 'heroElusive', 'ashWorm', 'takesDoubleDamage', 'heroPowerEffectTwice',
-  'heroPowerFreeSmallHand', 'noTurnDraw', 'sindragosaArcane', 'petrified', 'osk', 'tarTyrant', 'heroPowerAdjacent',
+  'heroPowerFreeSmallHand', 'heroPowerAlwaysFree', 'noTurnDraw', 'sindragosaArcane', 'petrified', 'osk', 'tarTyrant', 'heroPowerAdjacent',
   'rushImmune', 'redirectAttackers', 'adjacentBodyguard', 'heroPowerDamage2', 'malygosArcane', 'doubleSpellPower', 'rift',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
