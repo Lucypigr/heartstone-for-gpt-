@@ -436,6 +436,8 @@ export interface PlayerState {
   hand: HandCard[];
   board: Minion[];
   secrets: SecretInst[];
+  /** 觀察者之謎：暫時奧秘的 UID，下回合開始時移除。 */
+  workshopSecretsToExpire?: number[];
   /** 場上的地點牌 */
   locations?: Location[];
   graveyard: string[];
@@ -678,6 +680,8 @@ export interface PlayerState {
   mulliganDone: boolean;
   heroPowersUsed: number;
   drawnThisTurn: number;
+  /** 本場對戰真正抽進手牌的卡牌數（威茲邦：遊樂場巨人） */
+  cardsDrawnThisGame?: number;
   /** 本場對戰召喚過的各種族手下數量 */
   summonedRaces: Record<string, number>;
   /** 是否為電腦 */

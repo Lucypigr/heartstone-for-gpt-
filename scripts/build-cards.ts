@@ -6,7 +6,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { loadCardDefsXml, parseCardDefs, type RawCard } from './carddefs';
 import { parseCardText, Unsupported, type ParseEnv, type ParsedCard, type TokenQuery } from '../src/cards/parser';
 import type { CardClass, CardDef, CardType, ChooseOneOption, Keyword, Race, Rarity } from '../src/engine/types';
-import { OVERRIDES } from '../src/cards/overrides';
+import { OVERRIDES as BASE_OVERRIDES } from '../src/cards/overrides';
+import { WORKSHOP_CARDS } from '../src/cards/workshop';
+// 保留現有完整手動定義（含微型與巨型）；產卡器只新增能驗證的缺卡。
+const OVERRIDES = {
+  ...BASE_OVERRIDES,
+  ...Object.fromEntries(WORKSHOP_CARDS.map(({ id, ...card }) => [id, card])),
+} as typeof BASE_OVERRIDES;
 import { EXTRA_POWERS } from '../src/engine/heroes';
 import { DUNGEON_EXTRA_IDS } from '../src/cards/dungeon';
 
@@ -92,7 +98,6 @@ const UNSUPPORTED_TAGS = [
   'TITAN',
   'EXCAVATE',
   'DREDGE',
-  'MINIATURIZE',
   'QUICKDRAW',
   'SIGIL',
   'MANATHIRST',
@@ -128,9 +133,11 @@ async function main() {
   console.log(`CardDefs.xml：共 ${raws.length} 筆實體`);
 
   const byId = new Map<string, RawCard>();
+  const byDbf = new Map<number, RawCard>();
   const byName = new Map<string, RawCard[]>();
   for (const r of raws) {
     byId.set(r.id, r);
+    byDbf.set(r.dbf, r);
     const en = r.strs.CARDNAME?.enUS?.toLowerCase();
     if (!en) continue;
     if (!byName.has(en)) byName.set(en, []);
@@ -282,6 +289,32 @@ async function main() {
       def.twinspellCopy = copy.id;
     }
 
+    // 威茲邦：MINIATURIZE 與 GIGANTIFY 依官方 COLLECTION_RELATED_CARD_DATABASE_ID
+    // 及官方未收藏衍生卡標籤連接；從原始 XML 取得卡名／數值／種族，絕不猜測 ID。
+    // 迷你與巨大本體可同時具備兩種能力，微型和巨型卡不能再生成新卡。
+    if (collectible && r.tags.CARD_SET === 1897 && (r.tags.MINIATURIZE || r.tags.GIGANTIFY)) {
+      const matching = (tag: 'MINI' | 'GIGANTIC', stats: 1 | 8): RawCard | undefined => {
+        const preferred = byDbf.get(r.tags.COLLECTION_RELATED_CARD_DATABASE_ID ?? -1);
+        if (preferred && !preferred.tags.COLLECTIBLE && preferred.tags[tag] && preferred.tags.COST === stats && preferred.tags.ATK === stats && preferred.tags.HEALTH === stats) return preferred;
+        return (byName.get(r.strs.CARDNAME?.enUS?.toLowerCase() ?? '') ?? []).find(
+          (x) => !x.tags.COLLECTIBLE && x.tags[tag] && x.tags.COST === stats && x.tags.ATK === stats && x.tags.HEALTH === stats,
+        );
+      };
+      for (const [isEnabled, tag, stats, key] of [
+        [r.tags.MINIATURIZE, 'MINI', 1, 'miniaturize'],
+        [r.tags.GIGANTIFY, 'GIGANTIC', 8, 'gigantify'],
+      ] as const) {
+        if (!isEnabled) continue;
+        const related = matching(tag, stats);
+        const token = related && buildToken(related.id);
+        if (!token) {
+          failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `缺少可執行的 ${tag} 版本` });
+          return null;
+        }
+        def[key] = token.id;
+      }
+    }
+
     // 注入：友方手下死亡累積足夠次數後，手牌中的這張卡變成「注入」版本
     if (r.tags.INFUSE) {
       const tokenId = `${r.id.replace(/^CORE_/, '')}t`;
@@ -305,6 +338,21 @@ async function main() {
       else if (!OVERRIDES[r.id]) {
         if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `腐化版本不支援` });
         return null;
+      }
+    }
+    // 本體有手寫官方效果時，對應的 Mini/Gigantic 衍生卡沿用相同效果，
+    // 但維持 XML 指定的 1/1/1 或 8/8/8，且不得再次獲得微縮／巨大化。
+    if (!collectible && r.tags.CARD_SET === 1897 && (r.tags.MINI || r.tags.GIGANTIC)) {
+      const parent = raws.find((x) => x.tags.COLLECTIBLE && x.tags.CARD_SET === 1897 &&
+        x.strs.CARDNAME?.enUS === r.strs.CARDNAME?.enUS &&
+        ((x.tags.MINIATURIZE && r.tags.MINI) || (x.tags.GIGANTIFY && r.tags.GIGANTIC)));
+      const parentPatch = parent && OVERRIDES[parent.id];
+      if (parentPatch) {
+        const { abilities, auras, target, flags, chooseOne, spellDamage, overload, keywords, costRule, costIf, atkIf, handAbilities } = parentPatch;
+        return { ...def, ...(abilities && { abilities }), ...(auras && { auras }), ...(target && { target }),
+          ...(flags && { flags }), ...(chooseOne && { chooseOne }), ...(spellDamage && { spellDamage }),
+          ...(overload && { overload }), ...(keywords && { keywords }), ...(costRule && { costRule }),
+          ...(costIf && { costIf }), ...(atkIf && { atkIf }), ...(handAbilities && { handAbilities }) };
       }
     }
     const ov = OVERRIDES[r.id];
@@ -363,7 +411,13 @@ async function main() {
         // 二選一手下本身的關鍵字仍依標籤
         for (const [tag, kw] of KEYWORD_TAGS) if (r.tags[tag]) parsed.keywords.push(kw);
       } else {
-        parsed = parseCardText({ textEn: r.strs.CARDTEXT?.enUS ?? '', cardType: type }, makeEnv(r.id));
+        // XML 的 Miniaturize/Mini/Gigantify/Gigantic 是關鍵字；生成行為交由 game.ts。
+        // 保留剩餘的戰吼、亡語等文字，必須全部能成功解析才會加入卡池。
+        const rawText = r.strs.CARDTEXT?.enUS ?? '';
+        const workshopText = r.tags.CARD_SET === 1897
+          ? rawText.replace(/<\/?b>/gi, '').replace(/\b(Miniaturize|Gigantify|Mini|Gigantic)\b[.:]?/gi, '').trim()
+          : rawText;
+        parsed = parseCardText({ textEn: workshopText, cardType: type }, makeEnv(r.id));
       }
     } catch (e) {
       if (e instanceof Unsupported) {
@@ -531,6 +585,22 @@ async function main() {
     writeFileSync(OUT, JSON.stringify({ build, heroes, powers, heroSkins, aliases, cards: all }));
   }
 
+  // 產出工作坊來源稽核（僅在明確更新這個系列時）：保留官方 ID/DBF/繁中敘述，
+  // 讓補卡能參考準確來源，而不是依賴猜測或用無效果卡片灌水。
+  if (selectedSet === 1897) {
+    const source = raws.filter((r) => r.tags.CARD_SET === 1897 && !!r.strs.CARDNAME?.enUS)
+      .map((r) => ({ id: r.id, dbfId: r.dbf, name: clean(r.strs.CARDNAME?.zhTW),
+        nameEn: clean(r.strs.CARDNAME?.enUS), text: clean(r.strs.CARDTEXT?.zhTW),
+        textEn: clean(r.strs.CARDTEXT?.enUS), collectible: !!r.tags.COLLECTIBLE,
+        mini: !!r.tags.MINI, gigantic: !!r.tags.GIGANTIC,
+        relatedDbf: r.tags.COLLECTION_RELATED_CARD_DATABASE_ID ?? null,
+        cost: r.tags.COST, attack: r.tags.ATK, health: r.tags.HEALTH,
+        rarity: r.tags.RARITY, type: r.tags.CARDTYPE, cardClass: r.tags.CLASS, tags: r.tags,
+      }));
+    writeFileSync('docs/workshop-source.json', JSON.stringify({ build, source }));
+    writeFileSync('docs/workshop-unimplemented.json', JSON.stringify({ build,
+      failures: failures.filter((f) => f.set === 1897) }));
+  }
   const bySet = new Map<number, { ok: number; total: number }>();
   for (const group of groups.values()) {
     if (selectedSet !== undefined && !group.some((r) => r.tags.CARD_SET === selectedSet)) continue;

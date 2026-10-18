@@ -39,7 +39,7 @@ export const SET_NAMES: Record<number, string> = {
   1858: '泰坦',
   1869: '亞瑟之路',
   1892: '決戰荒蕪之地',
-  1897: '威茲班的工作坊',
+  1897: '威茲邦的工作坊',
   1898: '時光之穴',
   1905: '天堂島',
   1935: '深暗領域',
@@ -71,6 +71,14 @@ export interface PackType {
 }
 
 export const PACKS: PackType[] = [
+  {
+    id: 'workshop',
+    name: '威茲邦的工作坊卡包',
+    description: '威茲邦的工作坊與爆爆博士的超讚發明：目前只會抽到已實作的卡牌',
+    sets: [1897],
+    price: 100,
+    color: '#b17bce',
+  },
   {
     id: 'paradise',
     name: '天堂島卡包',

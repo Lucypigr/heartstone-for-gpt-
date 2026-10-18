@@ -139,6 +139,7 @@ export type DynAmount =
   | 'friendlyDeathsThisGame'
   | 'heroPowersUsed'
   | 'drawnThisTurn'
+  | 'cardsDrawnThisGame'
   | 'spellsInHand'
   | 'damagedMinions'
   | 'friendlyRace'
@@ -520,7 +521,7 @@ export type Effect =
   | { e: 'heroAttack'; amount: number }
   | { e: 'equip'; card: string }
   | { e: 'addCard'; card: string; count: number; who: 'self' | 'opponent' }
-  | { e: 'addRandom'; pool: Pool; count: number; who: 'self' | 'opponent' }
+  | { e: 'addRandom'; pool: Pool; count: number; who: 'self' | 'opponent'; temporary?: boolean }
   | { e: 'addCopy'; target: TargetExpr; count: number }
   | { e: 'discover'; pool: Pool; then?: Effect[] }
   | { e: 'returnToHand'; target: TargetExpr; costChange?: number }
@@ -929,6 +930,10 @@ export interface CardDef {
   adjDiscount?: boolean;
   /** 發射過星艦後，手牌與牌堆中的這張卡會變形成另一張卡 */
   launchTransform?: string;
+  /** 微縮：打出原卡後加入手牌的微型卡 ID（微型卡本身不可再觸發）。 */
+  miniaturize?: string;
+  /** 巨大化：打出原卡後加入手牌的巨型卡 ID（巨型卡本身不可再觸發）。 */
+  gigantify?: string;
   /** 雙生法術：施放後加入手牌的複製（沒有雙生法術） */
   twinspellCopy?: string;
   /** 死亡騎士的符文需求（血魄 / 冰霜 / 穢邪） */
@@ -1119,6 +1124,7 @@ export type MinionFlag =
   | 'natureFeeds'
   | 'natureSummons'
   | 'heroPowerFreeSmallHand'
+  | 'heroPowerAlwaysFree'
   | 'sindragosaArcane'
   | 'malygosArcane'
   | 'doubleSpellPower'
