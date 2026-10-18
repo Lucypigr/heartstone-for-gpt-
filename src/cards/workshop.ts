@@ -71,4 +71,8 @@ export const WORKSHOP_CARDS: CardDef[] = [
     cost: 8, attack: 8, health: 8, races: ['BEAST'],
     keywords: ['ELUSIVE', 'LIFESTEAL', 'TAUNT'], collectible: false,
   },
+  // Pro Gamer 的官方剪刀石頭布選項：只用於選擇視窗，不會進入收藏。
+  { id: 'MIS_916a', dbfId: 106676, name: '石頭！', nameEn: 'Rock!', text: '如果你的對手出剪刀，你抽兩張卡牌', type: 'SPELL', cardClass: 'NEUTRAL', rarity: 'FREE', set: 1897, cost: 0, collectible: false },
+  { id: 'MIS_916b', dbfId: 106677, name: '布！', nameEn: 'Paper!', text: '如果你的對手出石頭，你抽兩張卡牌', type: 'SPELL', cardClass: 'NEUTRAL', rarity: 'FREE', set: 1897, cost: 0, collectible: false },
+  { id: 'MIS_916c', dbfId: 106678, name: '剪刀！', nameEn: 'Scissors!', text: '如果你的對手出布，你抽兩張卡牌', type: 'SPELL', cardClass: 'NEUTRAL', rarity: 'FREE', set: 1897, cost: 0, collectible: false },
 ];
