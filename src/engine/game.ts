@@ -1393,6 +1393,7 @@ export class Game {
     let cost = p.powerCostSet ?? p.heroPower.cost;
     // 奎爾多雷弓箭手：手牌只有 3 張以下時，英雄能力消耗為 (0)
     if (this.flagOnBoard('heroPowerFreeSmallHand', p.id) && p.hand.length <= 3) cost = 0;
+    if (this.flagOnBoard('heroPowerAlwaysFree', p.id)) cost = 0;
     if (this.flagOnBoard('heroPowerCost1', p.id)) cost = Math.min(cost, 1);
     if (p.powerTax?.turn === this.s.turn) cost += p.powerTax.amount;
     cost -= p.powerDiscount ?? 0;
