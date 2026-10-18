@@ -573,7 +573,7 @@ async function main() {
   // 產出工作坊來源稽核（僅在明確更新這個系列時）：保留官方 ID/DBF/繁中敘述，
   // 讓補卡能參考準確來源，而不是依賴猜測或用無效果卡片灌水。
   if (selectedSet === 1897) {
-    const source = raws.filter((r) => r.tags.CARD_SET === 1897 && (r.tags.COLLECTIBLE || r.tags.MINI || r.tags.GIGANTIC))
+    const source = raws.filter((r) => r.tags.CARD_SET === 1897 && !!r.strs.CARDNAME?.enUS)
       .map((r) => ({ id: r.id, dbfId: r.dbf, name: clean(r.strs.CARDNAME?.zhTW),
         nameEn: clean(r.strs.CARDNAME?.enUS), text: clean(r.strs.CARDTEXT?.zhTW),
         textEn: clean(r.strs.CARDTEXT?.enUS), collectible: !!r.tags.COLLECTIBLE,
