@@ -678,6 +678,8 @@ export interface PlayerState {
   mulliganDone: boolean;
   heroPowersUsed: number;
   drawnThisTurn: number;
+  /** 本場對戰真正抽進手牌的卡牌數（威茲邦：遊樂場巨人） */
+  cardsDrawnThisGame?: number;
   /** 本場對戰召喚過的各種族手下數量 */
   summonedRaces: Record<string, number>;
   /** 是否為電腦 */
