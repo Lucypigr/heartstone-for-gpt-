@@ -1124,6 +1124,7 @@ export type MinionFlag =
   | 'natureFeeds'
   | 'natureSummons'
   | 'heroPowerFreeSmallHand'
+  | 'heroPowerAlwaysFree'
   | 'sindragosaArcane'
   | 'malygosArcane'
   | 'doubleSpellPower'
