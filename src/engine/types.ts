@@ -139,6 +139,7 @@ export type DynAmount =
   | 'friendlyDeathsThisGame'
   | 'heroPowersUsed'
   | 'drawnThisTurn'
+  | 'cardsDrawnThisGame'
   | 'spellsInHand'
   | 'damagedMinions'
   | 'friendlyRace'
