@@ -5176,6 +5176,12 @@ export class Game {
   private randomPool(pool: Pool, pid: PlayerId, classRestrict: boolean): CardDef[] {
     const own = this.s.players[pid].heroClass;
     let cards = poolCards(pool, own, this.s.players[opp(pid)].heroClass).filter((c) => pool.allowTitans || !c.titan);
+    // 系列回顧型隨機卡池優先選擇明確指定的種族；全種族卡僅在沒有該種族時作後備。
+    // 避免新加入的全種族卡改變既有跨系列龍／惡魔效果的結果。
+    if (pool.past && pool.race) {
+      const specific = cards.filter((c) => c.races?.includes(pool.race!));
+      if (specific.length) cards = specific;
+    }
     if (classRestrict && !pool.cls && !pool.classes && !pool.anyClass) {
       const restricted = cards.filter((c) => c.cardClass === 'NEUTRAL' || cardClasses(c).includes(own));
       if (restricted.length) cards = restricted;
