@@ -7612,6 +7612,85 @@ export class Game {
         for (let i=0;i<2;i++) { const id=pick(this.s,minis); if(id) add(id); }
         break;
       }
+      case 'Dorian': {
+        const id = ctx.it?.kind === 'hand' ? me.hand.find((h) => h.uid === ctx.it?.uid)?.cardId : undefined;
+        if (!id || getCard(id).type !== 'MINION') break;
+        const copy = add(id);
+        if (copy) {
+          copy.atkBuff += 1 - (getCard(id).attack ?? 0);
+          copy.hpBuff += 1 - (getCard(id).health ?? 0);
+          copy.costMod += 1 - getCard(id).cost;
+        }
+        break;
+      }
+      case 'Wheel':
+        me.deck = [];
+        yield* this.runEffects([{ e: 'delayed', turns: 5, effects: [{ e: 'custom', fn: 'wsWheelKill' }] }], ctx);
+        break;
+      case 'WheelKill':
+        // 終局獎勵是摧毀敵方英雄，不消耗他的護甲而後再傷害。
+        foe.hero.armor = 0;
+        yield* this.damage({ owner: me.id, uid: null }, foe.hero.uid, Math.max(1, foe.hero.hp + 10));
+        break;
+      case 'ToyChest': {
+        const ids = shuffle(this.s, [...new Set(me.deck.map((h) => h.cardId))]).slice(0, 3);
+        if (!ids.length) break;
+        const chosen = yield* this.choose(ctx, ids, '從牌堆中發現一張牌');
+        const h = me.deck.find((x) => x.cardId === chosen);
+        if (h) me.deck.splice(me.deck.indexOf(h), 1);
+        add(chosen);
+        if (this.dyn('spellDamage', ctx)>0) add(chosen);
+        break;
+      }
+      case 'CraneGame': {
+        const pool = shuffle(this.s, me.deck.filter((h) => (getCard(h.cardId).races ?? []).includes('DEMON')));
+        for (const h of pool.slice(0,2)) yield* this.doSummon(ctx, me.id, h.cardId);
+        break;
+      }
+      case 'Endgame': {
+        const id = [...me.graveyard].reverse().find((id) => (getCard(id).races ?? []).includes('DEMON'));
+        if (id) yield* this.doSummon(ctx, me.id, id);
+        break;
+      }
+      case 'OrigamiAttack':
+        if (self && tm) {
+          const a = this.atkOf(self), b = this.atkOf(tm);
+          self.atkBuff += b - a;
+          tm.atkBuff += a - b;
+        }
+        break;
+      case 'OrigamiHealth':
+        if (self && tm) {
+          const a = self.maxHp, b = tm.maxHp;
+          self.maxHp = b; self.hp = Math.min(b, self.hp + (b - a));
+          tm.maxHp = a; tm.hp = Math.min(a, tm.hp + (a - b));
+        }
+        break;
+      case 'OrigamiStats':
+        if (self && tm) {
+          const a = this.atkOf(self), b = this.atkOf(tm);
+          self.atkBuff += b - a; tm.atkBuff += a - b;
+          const h1 = self.maxHp, h2 = tm.maxHp;
+          self.maxHp = h2; self.hp = Math.min(h2, self.hp + (h2 - h1));
+          tm.maxHp = h1; tm.hp = Math.min(h1, tm.hp + (h1 - h2));
+        }
+        break;
+      case 'Hydra': {
+        const old = ctx.sourceSnapshot ?? self;
+        if (!old) break;
+        const d = getCard(old.cardId), copy = this.newHandCard(old.cardId);
+        copy.atkBuff = 2 * this.atkOf(old) - (d.attack ?? 0);
+        copy.hpBuff = 2 * old.maxHp - (d.health ?? 0);
+        me.deck.splice(randomInt(this.s, me.deck.length+1),0,copy);
+        break;
+      }
+      case 'Jepetto':
+        for (const id of me.playedCards ?? []) {
+          if (!hasCard(id)) continue;
+          const d = getCard(id);
+          if (d.type === 'MINION' && (d.attack === 1 || d.health === 1)) add(id);
+        }
+        break;
       case 'ObserverSecrets': {
         const pool = this.randomPool({ isSecret: true }, me.id, true);
         for (let i = 0; i < 2 && me.secrets.length < MAX_SECRETS; i++) {
