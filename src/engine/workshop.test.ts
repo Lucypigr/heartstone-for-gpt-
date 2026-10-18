@@ -87,10 +87,10 @@ describe('威茲邦的工作坊：微縮與巨大化', () => {
       expect(g.apply({ type: 'play', handUid: hc.uid, target: hero.uid })).toBe(true);
     };
     cast();
-    expect(g.atkOf(m.uid)).toBe(4);
+    expect(g.atkOf(m)).toBe(4);
     expect(m.maxHp).toBe(5);
     cast();
-    expect(g.atkOf(m.uid)).toBe(4);
+    expect(g.atkOf(m)).toBe(4);
     expect(m.maxHp).toBe(5);
   });
 
