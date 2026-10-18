@@ -340,6 +340,21 @@ async function main() {
         return null;
       }
     }
+    // 本體有手寫官方效果時，對應的 Mini/Gigantic 衍生卡沿用相同效果，
+    // 但維持 XML 指定的 1/1/1 或 8/8/8，且不得再次獲得微縮／巨大化。
+    if (!collectible && r.tags.CARD_SET === 1897 && (r.tags.MINI || r.tags.GIGANTIC)) {
+      const parent = raws.find((x) => x.tags.COLLECTIBLE && x.tags.CARD_SET === 1897 &&
+        x.strs.CARDNAME?.enUS === r.strs.CARDNAME?.enUS &&
+        ((x.tags.MINIATURIZE && r.tags.MINI) || (x.tags.GIGANTIFY && r.tags.GIGANTIC)));
+      const parentPatch = parent && OVERRIDES[parent.id];
+      if (parentPatch) {
+        const { abilities, auras, target, flags, chooseOne, spellDamage, overload, keywords, costRule, costIf, atkIf, handAbilities } = parentPatch;
+        return { ...def, ...(abilities && { abilities }), ...(auras && { auras }), ...(target && { target }),
+          ...(flags && { flags }), ...(chooseOne && { chooseOne }), ...(spellDamage && { spellDamage }),
+          ...(overload && { overload }), ...(keywords && { keywords }), ...(costRule && { costRule }),
+          ...(costIf && { costIf }), ...(atkIf && { atkIf }), ...(handAbilities && { handAbilities }) };
+      }
+    }
     const ov = OVERRIDES[r.id];
     if (ov) {
       const { tokens, heroPower, ...rest } = ov;
